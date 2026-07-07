@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import { VirtualWorkspace } from '../src/main/workspace/VirtualWorkspace';
@@ -44,6 +45,25 @@ describe('pdfExtractor', () => {
     const pdf = pdfWith(Buffer.from('BT (a\\(b\\) c) Tj ET', 'latin1'));
     const result = await pdfExtractor.extract({ name: 'esc.pdf', content: pdf });
     expect(result.text).toBe('a(b) c');
+  });
+
+  it('decodes ordinary hex strings as bytes when no font map is present', async () => {
+    const pdf = pdfWith(Buffer.from('BT <4865> Tj ET', 'latin1'));
+    const result = await pdfExtractor.extract({ name: 'hex.pdf', content: pdf });
+    expect(result.text).toBe('He');
+  });
+
+  it('extracts readable text from a real PDF fixture with embedded font maps', async () => {
+    const pdf = readFileSync('tests/fixtures/pdf/tropical-escape-itinerary.pdf');
+    const result = await pdfExtractor.extract({ name: 'tropical-escape-itinerary.pdf', content: pdf });
+
+    expect(result.attachments).toBeUndefined();
+    expect(result.text).not.toContain('\u0000');
+    expect(result.text).toContain('TROPICAL ESCAPE');
+    expect(result.text).toContain('Part 1: Cairns & The Ancient Daintree');
+    expect(result.text).toContain('Arrival & Beef Burgers');
+    expect(result.text).toContain('Mossman Gorge');
+    expect(result.text).toContain('Travel Notes & Tips');
   });
 
   it('falls back to a native PDF attachment when there is no text layer', async () => {
