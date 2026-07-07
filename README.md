@@ -37,6 +37,31 @@ npm run typecheck  # strict tsc, no emit
 npm test           # vitest (validator, workspace, tools, QuickJS, loop)
 ```
 
+### Package a portable Windows .exe
+
+```bash
+npm run build:win  # -> release/Sandboxed Agent PoC-<version>-portable.exe
+```
+
+Run this **on Windows** (PowerShell or cmd), not under WSL — electron-builder
+produces a native Windows binary. It compiles with `electron-vite build`, then
+packs `out/` plus production dependencies into a single self-contained `.exe`
+(no install step) via `electron-builder` (config in `electron-builder.yml`).
+Since the API key is entered at runtime, the packaged exe ships **no secrets**.
+
+If you develop in **WSL**, don't run `build:win` against your Linux checkout —
+its `node_modules` holds Linux-native binaries. Instead use:
+
+```bash
+npm run build:win:wsl           # sync -> Windows install -> build
+npm run build:win:wsl -- --run  # ...then launch the exe
+```
+
+This drives the Windows Node toolchain over WSL interop in an isolated
+Windows-side working copy (its own `node_modules`), so your Linux `node_modules`
+is never touched. The exe is copied back into `release/`. Requires Node on
+Windows and WSL interop (`cmd.exe` on PATH). See `scripts/build-win.sh`.
+
 On launch the app prompts for your Anthropic API key (unless `ANTHROPIC_API_KEY`
 is set in the environment `npm run dev` inherits, in which case it is used as a
 seed). The key stays in main-process memory and is discarded when the app exits.

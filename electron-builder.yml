@@ -1,0 +1,25 @@
+appId: com.affinda.sandboxed-agent-poc
+productName: Sandboxed Agent PoC
+directories:
+  output: release
+  buildResources: build
+# Keep the default "**/*" base (so out/ and production node_modules —
+# @anthropic-ai/sdk, quickjs-emscripten — are bundled; dev deps are auto-pruned)
+# and exclude only source/config. .env is excluded as defense-in-depth so a key
+# can never be packed into the binary.
+files:
+  - '!src/*'
+  - '!tests/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!vitest.config.{js,ts,mjs,cjs}'
+  - '!tsconfig.json'
+  - '!{.env,.env.*}'
+  - '!{README.md,plan.md,electron-builder.yml}'
+# Single self-contained .exe — no install step, runs from anywhere.
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
