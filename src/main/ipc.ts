@@ -9,7 +9,7 @@ import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
 import { runAgent } from './agent/loop';
 import { TokenBudget } from './agent/types';
-import { getTokenBudgetLimit, hasApiKey, setApiKey, clearApiKey } from './agent/client';
+import { hasApiKey, setApiKey, clearApiKey } from './agent/client';
 
 interface AppState {
   staged: StagedFileInfo[];
@@ -112,7 +112,7 @@ export function registerIpc(window: BrowserWindow): void {
     state.controller = controller;
     state.running = true;
 
-    const budget = new TokenBudget(getTokenBudgetLimit());
+    const budget = new TokenBudget();
     try {
       await runAgent({
         task: trimmed,

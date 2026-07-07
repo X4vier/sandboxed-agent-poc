@@ -9,7 +9,7 @@ const files = (await readdir(dir)).filter((f) => /\.(pdf|docx)$/.test(f));
 for (const f of files) {
   const content = await readFile(join(dir, f));
   const ext = f.endsWith('.pdf') ? pdfExtractor : docxExtractor;
-  const r = await ext.extract({ name: f, content });
+  const r = await ext.extract({ name: f, content }, { offset: 1 });
   const attached = r.attachments?.length ?? 0;
   console.log(`\n=== ${f} (${(content.length/1024).toFixed(0)}KB) — ${r.text.length} chars, ${attached} attach ===`);
   console.log(r.text.slice(0, 450).replace(/\n+/g, ' \\n '));

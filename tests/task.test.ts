@@ -40,6 +40,8 @@ vi.mock('../src/main/agent/client', () => ({
   AGENT_MODEL: 'test-model',
   getClient: () => fakeClient,
   getEffort: () => 'low',
+  getContextWindow: () => 200_000,
+  getCompactionThreshold: () => 0.8,
 }));
 
 const { runAgent } = await import('../src/main/agent/loop');
@@ -81,7 +83,7 @@ describe('Task subagent', () => {
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
       depth: 0,
-      budget: new TokenBudget(500_000),
+      budget: new TokenBudget(),
     });
 
     // Subagent's writes persist in the shared workspace.

@@ -64,11 +64,19 @@ sync_once
 
 # --- ensure win32 dependencies -------------------------------------------
 # Install when node_modules is missing (build:win:wsl / a prior run may have
-# populated it already).
-if [ ! -d "$ISO_WSL/node_modules" ]; then
-  echo "Installing win32 node_modules (first run)…"
+# populated it already) AND whenever package-lock.json has changed since the
+# last install — e.g. a dependency was added. node_modules is rsync-excluded,
+# so a freshly synced lockfile would otherwise go unnoticed and the new dep
+# would be missing at runtime (externalized main-process deps are require()d
+# from node_modules, not bundled). The stamp lives inside node_modules so it
+# survives the source sync.
+LOCK="$ISO_WSL/package-lock.json"
+STAMP="$ISO_WSL/node_modules/.dev-win-install-stamp"
+if [ ! -d "$ISO_WSL/node_modules" ] || [ ! -f "$STAMP" ] || ! cmp -s "$LOCK" "$STAMP"; then
+  echo "Installing win32 node_modules (missing or dependencies changed)…"
   ( cd "$ISO_WSL" && cmd.exe /c "npm install --no-fund --no-audit" ) \
     || { echo "Windows npm install failed." >&2; exit 1; }
+  cp "$LOCK" "$STAMP"
 fi
 
 # `npm run dev` launches Electron, so the electron *binary* must be present —

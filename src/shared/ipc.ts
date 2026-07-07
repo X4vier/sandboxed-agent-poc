@@ -43,6 +43,7 @@ export type AgentEvent =
   | { type: 'tool_call'; id: string; name: string; input: unknown; depth: number }
   | { type: 'tool_result'; id: string; name: string; result: string; isError: boolean; depth: number }
   | { type: 'todos'; todos: TodoItem[]; depth: number }
+  | { type: 'compaction'; depth: number; contextTokens: number }
   | { type: 'turn_complete'; usage: TokenUsage }
   | { type: 'error'; message: string }
   | { type: 'done'; summary: string; usage: TokenUsage };

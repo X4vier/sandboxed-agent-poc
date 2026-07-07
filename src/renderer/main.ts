@@ -458,6 +458,11 @@ agent.onAgentEvent((event: AgentEvent) => {
     case 'todos':
       updateTodos(event.todos, event.depth);
       break;
+    case 'compaction':
+      addBanner(
+        `Context compacted (was ~${event.contextTokens.toLocaleString()} tokens) — summarizing history to keep going.`,
+      );
+      break;
     case 'turn_complete':
       setTokens(event.usage);
       break;

@@ -40,11 +40,17 @@ export interface AgentTool<In = unknown> {
   handler(input: In, ctx: ToolContext): Promise<string>;
 }
 
-/** Shared, mutable cumulative token counter across an entire agent tree. */
+/**
+ * Cumulative token usage across an entire agent tree, for reporting only.
+ *
+ * This is a running total we surface to the UI — it is NOT a ceiling. Runs are
+ * never aborted on a token count. Context pressure is handled per agent by
+ * compaction (see the loop), mirroring Claude Code, so a large or long-running
+ * job degrades into summarized context rather than a hard stop.
+ */
 export class TokenBudget {
   inputTokens = 0;
   outputTokens = 0;
-  constructor(public readonly limit: number) {}
 
   add(inputTokens: number, outputTokens: number): void {
     this.inputTokens += inputTokens;
@@ -53,10 +59,6 @@ export class TokenBudget {
 
   get used(): number {
     return this.inputTokens + this.outputTokens;
-  }
-
-  get exceeded(): boolean {
-    return this.used >= this.limit;
   }
 
   snapshot(): { inputTokens: number; outputTokens: number; totalTokens: number } {

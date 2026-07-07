@@ -57,8 +57,26 @@ export function getEffort(): Effort {
   return raw && (EFFORTS as readonly string[]).includes(raw) ? (raw as Effort) : 'medium';
 }
 
-export function getTokenBudgetLimit(): number {
-  const raw = process.env['AGENT_TOKEN_BUDGET'];
+/**
+ * The model's usable context window in tokens. We never hard-stop a run on a
+ * cumulative token count (Claude Code doesn't); instead we watch how full each
+ * agent's own window is and compact before it overflows. Defaults to the
+ * standard Sonnet window; raise it via AGENT_CONTEXT_WINDOW when running with a
+ * larger-context beta.
+ */
+export function getContextWindow(): number {
+  const raw = process.env['AGENT_CONTEXT_WINDOW'];
   const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 500_000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 200_000;
+}
+
+/**
+ * Fraction of the context window at which an agent compacts its history. When
+ * the most recent turn's input token count crosses this share of the window,
+ * older turns are summarized before the next call. Default 0.8.
+ */
+export function getCompactionThreshold(): number {
+  const raw = process.env['AGENT_COMPACT_THRESHOLD'];
+  const parsed = raw ? Number.parseFloat(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 && parsed < 1 ? parsed : 0.8;
 }

@@ -79,35 +79,56 @@ function documentXml(...paragraphs: string[]): string {
 describe('docxExtractor', () => {
   it('extracts multi-paragraph text with newlines between paragraphs (stored)', async () => {
     const docx = makeDocx(documentXml(p('First paragraph'), p('Second paragraph')), false);
-    const result = await docxExtractor.extract({ name: 'stored.docx', content: docx });
+    const result = await docxExtractor.extract({ name: 'stored.docx', content: docx }, { offset: 1 });
     expect(result.text).toBe('First paragraph\nSecond paragraph');
     expect(result.attachments).toBeUndefined();
   });
 
   it('inflates DEFLATE-compressed entries', async () => {
     const docx = makeDocx(documentXml(p('Compressed body')), true);
-    const result = await docxExtractor.extract({ name: 'zipped.docx', content: docx });
+    const result = await docxExtractor.extract({ name: 'zipped.docx', content: docx }, { offset: 1 });
     expect(result.text).toBe('Compressed body');
   });
 
   it('decodes XML entities', async () => {
     const docx = makeDocx(documentXml(p('a &amp; b &lt;c&gt; &quot;d&quot; &apos;e&apos; &#65;&#x42;')), false);
-    const result = await docxExtractor.extract({ name: 'entities.docx', content: docx });
+    const result = await docxExtractor.extract({ name: 'entities.docx', content: docx }, { offset: 1 });
     expect(result.text).toBe('a & b <c> "d" \'e\' AB');
   });
 
   it('maps tabs and breaks within a run', async () => {
     const xml = documentXml('<w:p><w:r><w:t>col1</w:t><w:tab/><w:t>col2</w:t><w:br/><w:t>line2</w:t></w:r></w:p>');
     const docx = makeDocx(xml, true);
-    const result = await docxExtractor.extract({ name: 'tabs.docx', content: docx });
+    const result = await docxExtractor.extract({ name: 'tabs.docx', content: docx }, { offset: 1 });
     expect(result.text).toBe('col1\tcol2\nline2');
   });
 
   it('returns a diagnostic when word/document.xml is missing', async () => {
     // A ZIP whose only entry is some other file — no document.xml to read.
     const missing = makeDocx('<not-a-document/>', false, 'word/otherfile.xml');
-    const result = await docxExtractor.extract({ name: 'empty.docx', content: missing });
+    const result = await docxExtractor.extract({ name: 'empty.docx', content: missing }, { offset: 1 });
     expect(result.text).toBe('Could not extract text from "empty.docx".');
+  });
+
+  it('windows long text by line and points to the offset to resume from', async () => {
+    const paragraphs = Array.from({ length: 500 }, (_, i) => p(`Paragraph ${i + 1}`));
+    const docx = makeDocx(documentXml(...paragraphs), true);
+
+    const first = await docxExtractor.extract({ name: 'long.docx', content: docx }, { offset: 1, limit: 100 });
+    expect(first.text).toMatch(/(^|\n)Paragraph 100(\n|$)/);
+    expect(first.text).not.toMatch(/(^|\n)Paragraph 101(\n|$)/);
+    expect(first.text).toMatch(/re-call with offset=101 to continue/);
+
+    const second = await docxExtractor.extract({ name: 'long.docx', content: docx }, { offset: 101, limit: 100 });
+    expect(second.text).toMatch(/(^|\n)Paragraph 101(\n|$)/);
+    expect(second.text).not.toMatch(/(^|\n)Paragraph 100(\n|$)/);
+  });
+
+  it('caps a single oversized line by characters', async () => {
+    const docx = makeDocx(documentXml(p('x'.repeat(5000))), true);
+    const result = await docxExtractor.extract({ name: 'wide.docx', content: docx }, { offset: 1 });
+    expect(result.text).toContain('line truncated');
+    expect(result.text.length).toBeLessThan(5000);
   });
 });
 

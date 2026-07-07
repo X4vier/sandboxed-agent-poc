@@ -26,7 +26,8 @@ Environment variables (all optional):
 | ------------------- | ------------------- | -------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY` | —                   | Dev convenience: seeds the session key so you skip the prompt. |
 | `AGENT_MODEL`       | `claude-sonnet-5`   | Model id.                                                      |
-| `AGENT_TOKEN_BUDGET`| `500000`            | Cumulative token ceiling per run.                             |
+| `AGENT_CONTEXT_WINDOW` | `200000`         | Model context window; each agent compacts before filling it.  |
+| `AGENT_COMPACT_THRESHOLD` | `0.8`         | Fraction of the window at which an agent compacts its history. |
 
 ## Run
 
@@ -82,9 +83,11 @@ Renderer (UI) ── IPC (contextBridge) ── Main process
   narrow `window.agent` bridge defined in `src/preload`.
 - **Agent loop** (`src/main/agent/loop.ts`) is a hand-written Messages-API tool
   loop: stream assistant text, execute `tool_use` blocks, append `tool_result`
-  blocks, repeat. All state flows through `AgentRunOptions`, so a future
-  `spawn_subagent` tool is just a recursive `runAgent` call sharing the same VFS
-  and token budget.
+  blocks, repeat. All state flows through `AgentRunOptions`, so a subagent is
+  just a recursive `runAgent` call sharing the same VFS. Runs are never aborted
+  on a token count; instead each agent watches how full its own context window
+  is (the latest turn's `input_tokens`) and compacts its history — summarizing
+  older turns into a single message — before the window overflows.
 - **VirtualWorkspace** (`src/main/workspace`) is a `Map`-backed VFS keyed by
   normalized POSIX-relative paths, tracking `provided | created | modified`.
 - **Tools** (`src/main/tools`): `Read`, `Write`, `Edit`, `Glob`, `Grep`,

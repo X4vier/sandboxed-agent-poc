@@ -20,6 +20,10 @@ function createWindow(): void {
     height: 800,
     show: false,
     title: 'Sandboxed Agent PoC',
+    // Dev runs launch the stock electron.exe (electron-builder's win.icon only
+    // applies to the packaged exe), so set the window icon explicitly to get the
+    // mango on the taskbar in dev too. __dirname is out/main → repo-root build/.
+    icon: join(__dirname, '../../build/icon.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       // Security-critical: keep the renderer fully sandboxed.

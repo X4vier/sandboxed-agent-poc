@@ -1,5 +1,6 @@
 import { inflateRawSync } from 'node:zlib';
-import type { Extraction, Extractor, SourceFile } from '../types';
+import type { Extraction, Extractor, ReadWindow, SourceFile } from '../types';
+import { windowText } from '../window';
 
 /**
  * Word (.docx) text extraction, no third-party dependencies.
@@ -27,12 +28,12 @@ const DOCUMENT_PATH = 'word/document.xml';
 export const docxExtractor: Extractor = {
   extensions: ['docx'],
   label: 'Word document',
-  extract(file: SourceFile): Extraction {
+  extract(file: SourceFile, window: ReadWindow): Extraction {
     const xml = readDocumentXml(file.content);
     if (xml === null) {
       return { text: `Could not extract text from "${file.name}".` };
     }
-    return { text: xmlToText(xml) };
+    return { text: windowText(xmlToText(xml), file.name, window) };
   },
 };
 

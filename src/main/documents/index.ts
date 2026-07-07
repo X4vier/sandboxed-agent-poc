@@ -12,4 +12,4 @@ export function createExtractorRegistry(): ExtractorRegistry {
 }
 
 export { ExtractorRegistry } from './registry';
-export type { Attachment, Extraction, Extractor, SourceFile } from './types';
+export type { Attachment, Extraction, Extractor, ReadWindow, SourceFile } from './types';
