@@ -12,6 +12,8 @@ export interface StagedFileInfo {
   name: string;
   /** Size in bytes. */
   size: number;
+  /** Provenance: the app's bundled default corpus, or a user-added upload. */
+  origin: 'seed' | 'user';
 }
 
 export interface WorkspaceFileInfo {
@@ -21,11 +23,26 @@ export interface WorkspaceFileInfo {
   status: FileStatus;
 }
 
-/** Streamed agent events, mirrored to the renderer over IPC. */
+export type TodoStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface TodoItem {
+  /** Imperative description of the step, e.g. "Convert the CSV to JSON". */
+  content: string;
+  status: TodoStatus;
+  /** Present-tense form shown while in progress, e.g. "Converting the CSV to JSON". */
+  activeForm?: string;
+}
+
+/**
+ * Streamed agent events, mirrored to the renderer over IPC. `depth` is the
+ * nesting level of the agent that produced the event (0 = root, >0 = a
+ * subagent spawned via the Task tool); the renderer uses it to nest output.
+ */
 export type AgentEvent =
-  | { type: 'assistant_text_delta'; text: string }
-  | { type: 'tool_call'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; id: string; name: string; result: string; isError: boolean }
+  | { type: 'assistant_text_delta'; text: string; depth: number }
+  | { type: 'tool_call'; id: string; name: string; input: unknown; depth: number }
+  | { type: 'tool_result'; id: string; name: string; result: string; isError: boolean; depth: number }
+  | { type: 'todos'; todos: TodoItem[]; depth: number }
   | { type: 'turn_complete'; usage: TokenUsage }
   | { type: 'error'; message: string }
   | { type: 'done'; summary: string; usage: TokenUsage };
@@ -47,6 +64,10 @@ export interface AgentBridge {
   stageFiles(): Promise<StagedFileInfo[]>;
   removeStagedFile(path: string): Promise<StagedFileInfo[]>;
   listStagedFiles(): Promise<StagedFileInfo[]>;
+  /** Whether the bundled default corpus is currently included in the workspace. */
+  isSeedIncluded(): Promise<boolean>;
+  /** Include or exclude the whole default corpus; returns the new state. */
+  setSeedIncluded(included: boolean): Promise<boolean>;
   startTask(task: string): Promise<void>;
   cancelTask(): Promise<void>;
   onAgentEvent(cb: (event: AgentEvent) => void): () => void;

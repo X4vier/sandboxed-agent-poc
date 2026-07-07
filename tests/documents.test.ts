@@ -18,6 +18,14 @@ function pdfWith(body: Buffer, dict = ''): Buffer {
   ]);
 }
 
+function streamObject(objectNumber: number, body: Buffer, dict = ''): Buffer {
+  return Buffer.concat([
+    Buffer.from(`${objectNumber} 0 obj\n<< ${dict}/Length ${body.length} >>\nstream\n`, 'latin1'),
+    body,
+    Buffer.from('\nendstream\nendobj\n', 'latin1'),
+  ]);
+}
+
 describe('pdfExtractor', () => {
   it('extracts text from an uncompressed content stream', async () => {
     const pdf = pdfWith(Buffer.from('BT /F1 12 Tf 72 720 Td (Hello, world!) Tj ET', 'latin1'));
@@ -51,6 +59,50 @@ describe('pdfExtractor', () => {
     const pdf = pdfWith(Buffer.from('BT <4865> Tj ET', 'latin1'));
     const result = await pdfExtractor.extract({ name: 'hex.pdf', content: pdf });
     expect(result.text).toBe('He');
+  });
+
+  it('ignores invalid ToUnicode ranges instead of throwing', async () => {
+    const cmap = Buffer.from(
+      'begincmap\nbeginbfrange\n<0001> <0001> <d8000000>\nendbfrange\nendcmap',
+      'latin1',
+    );
+    const pdf = Buffer.concat([
+      pdfWith(cmap),
+      pdfWith(Buffer.from('BT (Hello after cmap) Tj ET', 'latin1')),
+    ]);
+
+    const result = await pdfExtractor.extract({ name: 'bad-cmap.pdf', content: pdf });
+
+    expect(result.text).toBe('Hello after cmap');
+  });
+
+  it('keeps ToUnicode streams attached to their own object number', async () => {
+    const cmap = Buffer.from(
+      [
+        'begincmap',
+        'beginbfchar',
+        '<0001> <0041>',
+        'endbfchar',
+        'endcmap',
+      ].join('\n'),
+      'latin1',
+    );
+    const body = Buffer.from('BT /F1 12 Tf <0001> Tj ET', 'latin1');
+    const pdf = Buffer.concat([
+      Buffer.from('%PDF-1.4\n', 'latin1'),
+      Buffer.from('1 0 obj\n<</Type /FontDescriptor>>\nendobj\n', 'latin1'),
+      Buffer.from(
+        '2 0 obj\n<</Type /Font /Subtype /Type0 /ToUnicode 3 0 R>>\nendobj\n',
+        'latin1',
+      ),
+      streamObject(3, cmap),
+      Buffer.from('4 0 obj\n<</Font <</F1 2 0 R>>>>\nendobj\n', 'latin1'),
+      streamObject(5, body),
+    ]);
+
+    const result = await pdfExtractor.extract({ name: 'mapped.pdf', content: pdf });
+
+    expect(result.text).toBe('A');
   });
 
   it('extracts readable text from a real PDF fixture with embedded font maps', async () => {
@@ -95,6 +147,8 @@ describe('read_document tool', () => {
       emit: () => {},
       signal: new AbortController().signal,
       attachBlocks: (blocks) => attached.push(...blocks),
+      depth: 0,
+      runSubagent: async () => '',
     };
   }
 

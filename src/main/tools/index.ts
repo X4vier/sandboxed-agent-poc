@@ -10,6 +10,8 @@ import {
 import { runJavascriptTool } from './runJavascript';
 import { createReadDocumentTool } from './documentTools';
 import { createExtractorRegistry } from '../documents';
+import { todoWriteTool } from './todoTools';
+import { taskTool } from './task';
 
 /** The complete, fixed tool set available to the agent. */
 export function buildTools(): AgentTool[] {
@@ -22,5 +24,7 @@ export function buildTools(): AgentTool[] {
     listFilesTool,
     createReadDocumentTool(createExtractorRegistry()),
     runJavascriptTool,
+    todoWriteTool,
+    taskTool,
   ];
 }

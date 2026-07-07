@@ -1,0 +1,702 @@
+[
+  {
+    "title": "Kenya",
+    "file": "kenya.pdf",
+    "format": "pdf",
+    "paragraphs": 178,
+    "images": 8
+  },
+  {
+    "title": "Algeria",
+    "file": "algeria.pdf",
+    "format": "pdf",
+    "paragraphs": 139,
+    "images": 8
+  },
+  {
+    "title": "Tunisia",
+    "file": "tunisia.pdf",
+    "format": "pdf",
+    "paragraphs": 133,
+    "images": 8
+  },
+  {
+    "title": "Democratic Republic of the Congo",
+    "file": "democratic-republic-of-the-congo.pdf",
+    "format": "pdf",
+    "paragraphs": 149,
+    "images": 8
+  },
+  {
+    "title": "Namibia",
+    "file": "namibia.pdf",
+    "format": "pdf",
+    "paragraphs": 126,
+    "images": 8
+  },
+  {
+    "title": "Madagascar",
+    "file": "madagascar.pdf",
+    "format": "pdf",
+    "paragraphs": 150,
+    "images": 7
+  },
+  {
+    "title": "Japan",
+    "file": "japan.pdf",
+    "format": "pdf",
+    "paragraphs": 91,
+    "images": 8
+  },
+  {
+    "title": "Indonesia",
+    "file": "indonesia.pdf",
+    "format": "pdf",
+    "paragraphs": 115,
+    "images": 7
+  },
+  {
+    "title": "Thailand",
+    "file": "thailand.pdf",
+    "format": "pdf",
+    "paragraphs": 175,
+    "images": 7
+  },
+  {
+    "title": "South Korea",
+    "file": "south-korea.pdf",
+    "format": "pdf",
+    "paragraphs": 136,
+    "images": 8
+  },
+  {
+    "title": "Bangladesh",
+    "file": "bangladesh.pdf",
+    "format": "pdf",
+    "paragraphs": 101,
+    "images": 8
+  },
+  {
+    "title": "Iran",
+    "file": "iran.pdf",
+    "format": "pdf",
+    "paragraphs": 173,
+    "images": 8
+  },
+  {
+    "title": "Kazakhstan",
+    "file": "kazakhstan.pdf",
+    "format": "pdf",
+    "paragraphs": 185,
+    "images": 8
+  },
+  {
+    "title": "Israel",
+    "file": "israel.pdf",
+    "format": "pdf",
+    "paragraphs": 142,
+    "images": 8
+  },
+  {
+    "title": "Cambodia",
+    "file": "cambodia.pdf",
+    "format": "pdf",
+    "paragraphs": 123,
+    "images": 8
+  },
+  {
+    "title": "Singapore",
+    "file": "singapore.pdf",
+    "format": "pdf",
+    "paragraphs": 111,
+    "images": 8
+  },
+  {
+    "title": "United Arab Emirates",
+    "file": "united-arab-emirates.pdf",
+    "format": "pdf",
+    "paragraphs": 168,
+    "images": 7
+  },
+  {
+    "title": "Jordan",
+    "file": "jordan.pdf",
+    "format": "pdf",
+    "paragraphs": 114,
+    "images": 8
+  },
+  {
+    "title": "Italy",
+    "file": "italy.pdf",
+    "format": "pdf",
+    "paragraphs": 175,
+    "images": 7
+  },
+  {
+    "title": "Netherlands",
+    "file": "netherlands.pdf",
+    "format": "pdf",
+    "paragraphs": 145,
+    "images": 7
+  },
+  {
+    "title": "Switzerland",
+    "file": "switzerland.pdf",
+    "format": "pdf",
+    "paragraphs": 161,
+    "images": 7
+  },
+  {
+    "title": "Denmark",
+    "file": "denmark.pdf",
+    "format": "pdf",
+    "paragraphs": 136,
+    "images": 7
+  },
+  {
+    "title": "Hungary",
+    "file": "hungary.pdf",
+    "format": "pdf",
+    "paragraphs": 112,
+    "images": 7
+  },
+  {
+    "title": "Romania",
+    "file": "romania.pdf",
+    "format": "pdf",
+    "paragraphs": 108,
+    "images": 7
+  },
+  {
+    "title": "Brazil",
+    "file": "brazil.pdf",
+    "format": "pdf",
+    "paragraphs": 154,
+    "images": 8
+  },
+  {
+    "title": "Georgia (country)",
+    "file": "georgia.pdf",
+    "format": "pdf",
+    "paragraphs": 151,
+    "images": 8
+  },
+  {
+    "title": "Peru",
+    "file": "peru.pdf",
+    "format": "pdf",
+    "paragraphs": 143,
+    "images": 7
+  },
+  {
+    "title": "Canada",
+    "file": "canada.pdf",
+    "format": "pdf",
+    "paragraphs": 98,
+    "images": 8
+  },
+  {
+    "title": "Sri Lanka",
+    "file": "sri-lanka.pdf",
+    "format": "pdf",
+    "paragraphs": 122,
+    "images": 8
+  },
+  {
+    "title": "Chile",
+    "file": "chile.pdf",
+    "format": "pdf",
+    "paragraphs": 168,
+    "images": 8
+  },
+  {
+    "title": "Ecuador",
+    "file": "ecuador.pdf",
+    "format": "pdf",
+    "paragraphs": 149,
+    "images": 8
+  },
+  {
+    "title": "Costa Rica",
+    "file": "costa-rica.pdf",
+    "format": "pdf",
+    "paragraphs": 93,
+    "images": 7
+  },
+  {
+    "title": "Australia",
+    "file": "australia.pdf",
+    "format": "pdf",
+    "paragraphs": 115,
+    "images": 8
+  },
+  {
+    "title": "Guatemala",
+    "file": "guatemala.pdf",
+    "format": "pdf",
+    "paragraphs": 157,
+    "images": 8
+  },
+  {
+    "title": "Uruguay",
+    "file": "uruguay.pdf",
+    "format": "pdf",
+    "paragraphs": 104,
+    "images": 8
+  },
+  {
+    "title": "Egypt",
+    "file": "egypt.pdf",
+    "format": "pdf",
+    "paragraphs": 190,
+    "images": 8
+  },
+  {
+    "title": "Fiji",
+    "file": "fiji.pdf",
+    "format": "pdf",
+    "paragraphs": 127,
+    "images": 8
+  },
+  {
+    "title": "Samoa",
+    "file": "samoa.pdf",
+    "format": "pdf",
+    "paragraphs": 121,
+    "images": 8
+  },
+  {
+    "title": "Cameroon",
+    "file": "cameroon.pdf",
+    "format": "pdf",
+    "paragraphs": 105,
+    "images": 8
+  },
+  {
+    "title": "France",
+    "file": "france.pdf",
+    "format": "pdf",
+    "paragraphs": 145,
+    "images": 7
+  },
+  {
+    "title": "Zimbabwe",
+    "file": "zimbabwe.pdf",
+    "format": "pdf",
+    "paragraphs": 132,
+    "images": 8
+  },
+  {
+    "title": "Sweden",
+    "file": "sweden.pdf",
+    "format": "pdf",
+    "paragraphs": 170,
+    "images": 7
+  },
+  {
+    "title": "Ghana",
+    "file": "ghana.pdf",
+    "format": "pdf",
+    "paragraphs": 85,
+    "images": 8
+  },
+  {
+    "title": "Uganda",
+    "file": "uganda.pdf",
+    "format": "pdf",
+    "paragraphs": 160,
+    "images": 8
+  },
+  {
+    "title": "United Kingdom",
+    "file": "united-kingdom.pdf",
+    "format": "pdf",
+    "paragraphs": 162,
+    "images": 8
+  },
+  {
+    "title": "Poland",
+    "file": "poland.pdf",
+    "format": "pdf",
+    "paragraphs": 132,
+    "images": 7
+  },
+  {
+    "title": "Ireland",
+    "file": "ireland.pdf",
+    "format": "pdf",
+    "paragraphs": 149,
+    "images": 8
+  },
+  {
+    "title": "Russia",
+    "file": "russia.pdf",
+    "format": "pdf",
+    "paragraphs": 143,
+    "images": 7
+  },
+  {
+    "title": "Serbia",
+    "file": "serbia.pdf",
+    "format": "pdf",
+    "paragraphs": 176,
+    "images": 8
+  },
+  {
+    "title": "Cuba",
+    "file": "cuba.pdf",
+    "format": "pdf",
+    "paragraphs": 144,
+    "images": 8
+  },
+  {
+    "title": "Dominican Republic",
+    "file": "dominican-republic.docx",
+    "format": "docx",
+    "paragraphs": 96,
+    "images": 7
+  },
+  {
+    "title": "Bolivia",
+    "file": "bolivia.docx",
+    "format": "docx",
+    "paragraphs": 145,
+    "images": 6
+  },
+  {
+    "title": "China",
+    "file": "china.docx",
+    "format": "docx",
+    "paragraphs": 96,
+    "images": 8
+  },
+  {
+    "title": "Uzbekistan",
+    "file": "uzbekistan.docx",
+    "format": "docx",
+    "paragraphs": 156,
+    "images": 7
+  },
+  {
+    "title": "Mozambique",
+    "file": "mozambique.docx",
+    "format": "docx",
+    "paragraphs": 94,
+    "images": 8
+  },
+  {
+    "title": "Senegal",
+    "file": "senegal.docx",
+    "format": "docx",
+    "paragraphs": 113,
+    "images": 8
+  },
+  {
+    "title": "India",
+    "file": "india.docx",
+    "format": "docx",
+    "paragraphs": 85,
+    "images": 8
+  },
+  {
+    "title": "Paraguay",
+    "file": "paraguay.docx",
+    "format": "docx",
+    "paragraphs": 107,
+    "images": 8
+  },
+  {
+    "title": "Finland",
+    "file": "finland.docx",
+    "format": "docx",
+    "paragraphs": 157,
+    "images": 7
+  },
+  {
+    "title": "Qatar",
+    "file": "qatar.docx",
+    "format": "docx",
+    "paragraphs": 125,
+    "images": 8
+  },
+  {
+    "title": "Zambia",
+    "file": "zambia.docx",
+    "format": "docx",
+    "paragraphs": 117,
+    "images": 8
+  },
+  {
+    "title": "Rwanda",
+    "file": "rwanda.docx",
+    "format": "docx",
+    "paragraphs": 104,
+    "images": 8
+  },
+  {
+    "title": "Argentina",
+    "file": "argentina.docx",
+    "format": "docx",
+    "paragraphs": 157,
+    "images": 8
+  },
+  {
+    "title": "Mexico",
+    "file": "mexico.docx",
+    "format": "docx",
+    "paragraphs": 144,
+    "images": 8
+  },
+  {
+    "title": "Saudi Arabia",
+    "file": "saudi-arabia.docx",
+    "format": "docx",
+    "paragraphs": 150,
+    "images": 8
+  },
+  {
+    "title": "Malaysia",
+    "file": "malaysia.docx",
+    "format": "docx",
+    "paragraphs": 83,
+    "images": 8
+  },
+  {
+    "title": "Nigeria",
+    "file": "nigeria.docx",
+    "format": "docx",
+    "paragraphs": 153,
+    "images": 7
+  },
+  {
+    "title": "Germany",
+    "file": "germany.docx",
+    "format": "docx",
+    "paragraphs": 96,
+    "images": 7
+  },
+  {
+    "title": "South Africa",
+    "file": "south-africa.docx",
+    "format": "docx",
+    "paragraphs": 137,
+    "images": 8
+  },
+  {
+    "title": "Mongolia",
+    "file": "mongolia.docx",
+    "format": "docx",
+    "paragraphs": 135,
+    "images": 8
+  },
+  {
+    "title": "Tanzania",
+    "file": "tanzania.docx",
+    "format": "docx",
+    "paragraphs": 159,
+    "images": 8
+  },
+  {
+    "title": "Spain",
+    "file": "spain.docx",
+    "format": "docx",
+    "paragraphs": 173,
+    "images": 8
+  },
+  {
+    "title": "Jamaica",
+    "file": "jamaica.docx",
+    "format": "docx",
+    "paragraphs": 132,
+    "images": 7
+  },
+  {
+    "title": "Panama",
+    "file": "panama.docx",
+    "format": "docx",
+    "paragraphs": 132,
+    "images": 8
+  },
+  {
+    "title": "Ethiopia",
+    "file": "ethiopia.docx",
+    "format": "docx",
+    "paragraphs": 157,
+    "images": 8
+  },
+  {
+    "title": "Papua New Guinea",
+    "file": "papua-new-guinea.docx",
+    "format": "docx",
+    "paragraphs": 102,
+    "images": 8
+  },
+  {
+    "title": "Myanmar",
+    "file": "myanmar.docx",
+    "format": "docx",
+    "paragraphs": 143,
+    "images": 8
+  },
+  {
+    "title": "Turkey",
+    "file": "turkey.docx",
+    "format": "docx",
+    "paragraphs": 114,
+    "images": 8
+  },
+  {
+    "title": "Greece",
+    "file": "greece.docx",
+    "format": "docx",
+    "paragraphs": 173,
+    "images": 7
+  },
+  {
+    "title": "Iceland",
+    "file": "iceland.docx",
+    "format": "docx",
+    "paragraphs": 144,
+    "images": 7
+  },
+  {
+    "title": "Estonia",
+    "file": "estonia.docx",
+    "format": "docx",
+    "paragraphs": 143,
+    "images": 7
+  },
+  {
+    "title": "Pakistan",
+    "file": "pakistan.docx",
+    "format": "docx",
+    "paragraphs": 140,
+    "images": 8
+  },
+  {
+    "title": "New Zealand",
+    "file": "new-zealand.docx",
+    "format": "docx",
+    "paragraphs": 94,
+    "images": 8
+  },
+  {
+    "title": "Nepal",
+    "file": "nepal.docx",
+    "format": "docx",
+    "paragraphs": 108,
+    "images": 8
+  },
+  {
+    "title": "Colombia",
+    "file": "colombia.docx",
+    "format": "docx",
+    "paragraphs": 140,
+    "images": 7
+  },
+  {
+    "title": "Norway",
+    "file": "norway.docx",
+    "format": "docx",
+    "paragraphs": 197,
+    "images": 7
+  },
+  {
+    "title": "Angola",
+    "file": "angola.docx",
+    "format": "docx",
+    "paragraphs": 136,
+    "images": 8
+  },
+  {
+    "title": "Morocco",
+    "file": "morocco.docx",
+    "format": "docx",
+    "paragraphs": 143,
+    "images": 8
+  },
+  {
+    "title": "Venezuela",
+    "file": "venezuela.docx",
+    "format": "docx",
+    "paragraphs": 167,
+    "images": 8
+  },
+  {
+    "title": "Ukraine",
+    "file": "ukraine.docx",
+    "format": "docx",
+    "paragraphs": 155,
+    "images": 7
+  },
+  {
+    "title": "Czech Republic",
+    "file": "czech-republic.docx",
+    "format": "docx",
+    "paragraphs": 147,
+    "images": 7
+  },
+  {
+    "title": "Austria",
+    "file": "austria.docx",
+    "format": "docx",
+    "paragraphs": 142,
+    "images": 7
+  },
+  {
+    "title": "United States",
+    "file": "united-states.docx",
+    "format": "docx",
+    "paragraphs": 138,
+    "images": 8
+  },
+  {
+    "title": "Philippines",
+    "file": "philippines.docx",
+    "format": "docx",
+    "paragraphs": 114,
+    "images": 8
+  },
+  {
+    "title": "Botswana",
+    "file": "botswana.docx",
+    "format": "docx",
+    "paragraphs": 86,
+    "images": 7
+  },
+  {
+    "title": "Iraq",
+    "file": "iraq.docx",
+    "format": "docx",
+    "paragraphs": 126,
+    "images": 8
+  },
+  {
+    "title": "Belgium",
+    "file": "belgium.docx",
+    "format": "docx",
+    "paragraphs": 104,
+    "images": 7
+  },
+  {
+    "title": "Portugal",
+    "file": "portugal.docx",
+    "format": "docx",
+    "paragraphs": 83,
+    "images": 8
+  },
+  {
+    "title": "Croatia",
+    "file": "croatia.docx",
+    "format": "docx",
+    "paragraphs": 104,
+    "images": 8
+  },
+  {
+    "title": "Vietnam",
+    "file": "vietnam.docx",
+    "format": "docx",
+    "paragraphs": 94,
+    "images": 8
+  }
+]

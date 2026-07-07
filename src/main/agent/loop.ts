@@ -48,7 +48,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
   const isRoot = depth === 0;
   const registry = new ToolRegistry(tools);
   const apiTools = registry.toApiTools() as unknown as Tool[];
-  const system = buildSystemPrompt(tools);
+  const system = buildSystemPrompt(tools, depth);
   const effort = getEffort();
   const client: Anthropic = getClient();
 
@@ -61,6 +61,12 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     emit,
     signal,
     attachBlocks: (blocks) => pendingMedia.push(...blocks),
+    depth,
+    // Reuse this run's shared vfs/emit/signal/budget; the child gets its own
+    // context window at the next depth. Same budget means a subagent's spend
+    // counts against the whole tree and can trip the ceiling here too.
+    runSubagent: (subtask) =>
+      runAgent({ task: subtask, tools, vfs, emit, signal, depth: depth + 1, budget }),
   };
   const messages: MessageParam[] = [{ role: 'user', content: task }];
 
@@ -84,7 +90,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
         },
         { signal },
       );
-      stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta }));
+      stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta, depth }));
 
       const final = await stream.finalMessage();
       budget.add(final.usage.input_tokens ?? 0, final.usage.output_tokens);
@@ -105,7 +111,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       const results: ToolResultBlockParam[] = [];
       for (const use of toolUses) {
         if (signal.aborted) throw new CancelledError();
-        emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input });
+        emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input, depth });
         let result: string;
         let isError = false;
         try {
@@ -114,7 +120,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
           result = `Error: ${(e as Error).message}`;
           isError = true;
         }
-        emit({ type: 'tool_result', id: use.id, name: use.name, result, isError });
+        emit({ type: 'tool_result', id: use.id, name: use.name, result, isError, depth });
         results.push({
           type: 'tool_result',
           tool_use_id: use.id,

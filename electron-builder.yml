@@ -10,11 +10,17 @@ directories:
 files:
   - '!src/*'
   - '!tests/*'
+  - '!scripts/*'
+  - '!seed-data/*' # shipped via extraResources below, not inside the asar
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!vitest.config.{js,ts,mjs,cjs}'
   - '!tsconfig.json'
   - '!{.env,.env.*}'
   - '!{README.md,plan.md,electron-builder.yml}'
+# The default document corpus, resolved at runtime via process.resourcesPath.
+extraResources:
+  - from: seed-data
+    to: seed-data
 # Single self-contained .exe — no install step, runs from anywhere.
 win:
   icon: build/icon.ico

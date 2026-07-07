@@ -22,6 +22,15 @@ export interface ToolContext {
    * to the model rather than plain text.
    */
   attachBlocks(blocks: ContentBlockParam[]): void;
+  /** Nesting depth of the current agent (0 = root, >0 = a spawned subagent). */
+  depth: number;
+  /**
+   * Launch a subagent that shares this workspace, tool set, token budget, and
+   * cancellation signal but gets its own fresh context window. Resolves to the
+   * subagent's final report. Used by the Task tool to delegate self-contained
+   * work without flooding the caller's context.
+   */
+  runSubagent(task: string): Promise<string>;
 }
 
 export interface AgentTool<In = unknown> {

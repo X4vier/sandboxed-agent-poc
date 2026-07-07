@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import type { AgentEvent, StagedFileInfo, WorkspaceFileInfo } from '../shared/ipc';
 import { VirtualWorkspace, MAX_FILE_BYTES } from './workspace/VirtualWorkspace';
+import { loadSeedCorpus } from './workspace/seedCorpus';
 import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
 import { runAgent } from './agent/loop';
@@ -12,9 +13,16 @@ import { getTokenBudgetLimit, hasApiKey, setApiKey, clearApiKey } from './agent/
 
 interface AppState {
   staged: StagedFileInfo[];
+  /** Whether the bundled default corpus (origin 'seed') is part of the workspace. */
+  seedIncluded: boolean;
   vfs: VirtualWorkspace | null;
   controller: AbortController | null;
   running: boolean;
+}
+
+/** The files that will actually populate the VFS, honouring the seed toggle. */
+function effectiveStaged(state: AppState): StagedFileInfo[] {
+  return state.staged.filter((f) => f.origin === 'user' || state.seedIncluded);
 }
 
 function requireString(value: unknown, name: string): string {
@@ -23,7 +31,16 @@ function requireString(value: unknown, name: string): string {
 }
 
 export function registerIpc(window: BrowserWindow): void {
-  const state: AppState = { staged: [], vfs: null, controller: null, running: false };
+  // Pre-stage the bundled default corpus (see scripts/seed/) so the agent
+  // starts with a rich document set; the user can still remove or add files,
+  // or exclude the whole corpus via the UI toggle (seedIncluded).
+  const state: AppState = {
+    staged: loadSeedCorpus(),
+    seedIncluded: true,
+    vfs: null,
+    controller: null,
+    running: false,
+  };
 
   const emit = (event: AgentEvent): void => {
     if (!window.isDestroyed()) window.webContents.send('agent:event', event);
@@ -54,7 +71,7 @@ export function registerIpc(window: BrowserWindow): void {
         rejected.push(`${basename(filePath)} (${(info.size / (1024 * 1024)).toFixed(0)}MB)`);
         continue;
       }
-      state.staged.push({ path: filePath, name: basename(filePath), size: info.size });
+      state.staged.push({ path: filePath, name: basename(filePath), size: info.size, origin: 'user' });
     }
     if (rejected.length > 0) {
       throw new Error(`Skipped files over the 50MB limit: ${rejected.join(', ')}.`);
@@ -70,6 +87,13 @@ export function registerIpc(window: BrowserWindow): void {
 
   ipcMain.handle('agent:listStagedFiles', (): StagedFileInfo[] => state.staged);
 
+  ipcMain.handle('agent:isSeedIncluded', (): boolean => state.seedIncluded);
+
+  ipcMain.handle('agent:setSeedIncluded', (_e, included: unknown): boolean => {
+    state.seedIncluded = included !== false;
+    return state.seedIncluded;
+  });
+
   ipcMain.handle('agent:startTask', async (_e, task: unknown): Promise<void> => {
     const trimmed = requireString(task, 'task').trim();
     if (trimmed.length === 0) throw new Error('Task must not be empty.');
@@ -77,8 +101,9 @@ export function registerIpc(window: BrowserWindow): void {
     if (state.running) throw new Error('A task is already running.');
 
     // Build a fresh in-memory workspace from the staged files (read-only reads).
+    // The default corpus is included only when the seed toggle is on.
     const vfs = new VirtualWorkspace();
-    for (const file of state.staged) {
+    for (const file of effectiveStaged(state)) {
       const content = await readFile(file.path);
       vfs.stageProvided(file.name, content);
     }

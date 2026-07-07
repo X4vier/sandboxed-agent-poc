@@ -11,6 +11,8 @@ function makeCtx(signal?: AbortSignal, vfs = new VirtualWorkspace()): ToolContex
     emit: () => {},
     signal: signal ?? new AbortController().signal,
     attachBlocks: () => {},
+    depth: 0,
+    runSubagent: async () => '',
   };
 }
 

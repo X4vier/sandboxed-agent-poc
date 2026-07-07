@@ -67,8 +67,11 @@ function* pdfStreams(pdf: Buffer): Generator<PdfStream> {
   const s = pdf.toString('latin1');
   // Match normal indirect stream objects. This parser is deliberately small,
   // but generated PDFs usually keep stream dictionaries in this straightforward
-  // shape.
-  const re = /(\d+)\s+\d+\s+obj\s*<<([\s\S]*?)>>\s*stream(?:\r\n|\r|\n)/g;
+  // shape. Do not cross an endobj looking for a later stream; otherwise a
+  // non-stream object immediately before a stream object can steal its stream
+  // and object number, which breaks ToUnicode font-map references.
+  const re =
+    /(?:^|\r?\n)(\d+)\s+\d+\s+obj\s*<<((?:(?!\bendobj\b)[\s\S])*?)>>\s*stream(?:\r\n|\r|\n)/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(s)) !== null) {
     const dataStart = match.index + match[0].length;
@@ -353,15 +356,54 @@ function readCMapRanges(section: string, entries: Map<string, string>): void {
   while ((rangeMatch = sequentialRangeRe.exec(section)) !== null) {
     const start = parseInt(rangeMatch[1], 16);
     const end = parseInt(rangeMatch[2], 16);
-    const destinationStart = parseInt(rangeMatch[3], 16);
     const sourceLength = normalizeHex(rangeMatch[1]).length;
-    for (let offset = 0; offset <= end - start; offset++) {
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) continue;
+    const rangeSize = end - start + 1;
+    if (rangeSize > 0x10000) continue;
+    for (let offset = 0; offset < rangeSize; offset++) {
+      const destination = offsetUnicodeHex(rangeMatch[3], offset);
+      if (destination === null) continue;
       entries.set(
         (start + offset).toString(16).padStart(sourceLength, '0'),
-        String.fromCodePoint(destinationStart + offset),
+        destination,
       );
     }
   }
+}
+
+function offsetUnicodeHex(hex: string, offset: number): string | null {
+  const clean = normalizeHex(hex);
+  if (clean.length < 4 || clean.length % 4 !== 0) return null;
+
+  const units: number[] = [];
+  for (let i = 0; i < clean.length; i += 4) {
+    const unit = parseInt(clean.slice(i, i + 4), 16);
+    if (!Number.isFinite(unit)) return null;
+    units.push(unit);
+  }
+
+  const last = units.length - 1;
+  units[last] += offset;
+  if (units[last] > 0xffff) return null;
+  return decodeUtf16Units(units);
+}
+
+function decodeUtf16Units(units: number[]): string | null {
+  let value = '';
+  for (let i = 0; i < units.length; i++) {
+    const unit = units[i];
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const low = units[i + 1];
+      if (low === undefined || low < 0xdc00 || low > 0xdfff) return null;
+      value += String.fromCodePoint(0x10000 + ((unit - 0xd800) << 10) + (low - 0xdc00));
+      i += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return null;
+    } else if (unit !== 0xfeff) {
+      value += String.fromCodePoint(unit);
+    }
+  }
+  return value;
 }
 
 function decodeMappedText(text: string, fontMap: FontUnicodeMap): string {
