@@ -19,8 +19,9 @@ export const taskTool: AgentTool = {
     'or edits persist for you). It runs autonomously and cannot ask you or the user questions, so the ' +
     'prompt must be fully self-contained — state exactly what to do and what to report back. The ' +
     "subagent's single final message is returned to you as this tool's result. Use it to keep " +
-    'context-heavy investigation out of your own window, or to handle independent sub-tasks; do the ' +
-    'work directly when it is quick.',
+    'context-heavy investigation out of your own window, or to handle independent sub-tasks. Multiple ' +
+    'Task calls in the same response run in parallel, so use them to fan out independent investigation; ' +
+    'avoid having parallel subagents write to the same file. Do the work directly when it is quick.',
   inputSchema: {
     type: 'object',
     properties: {

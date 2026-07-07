@@ -54,6 +54,16 @@ class CancelledError extends Error {
   }
 }
 
+interface ExecutedToolUse {
+  use: ToolUseBlock;
+  result: string;
+  isError: boolean;
+}
+
+type TaskOutcome =
+  | { status: 'fulfilled'; index: number; execution: ExecutedToolUse }
+  | { status: 'rejected'; index: number; error: unknown };
+
 function extractText(content: ContentBlockParam[]): string {
   return content
     .filter((b): b is Extract<ContentBlockParam, { type: 'text' }> => b.type === 'text')
@@ -144,6 +154,49 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     agentId,
     parentAgentId,
   };
+
+  const executeToolUse = async (use: ToolUseBlock): Promise<ExecutedToolUse> => {
+    if (signal.aborted) throw new CancelledError();
+    emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input, ...eventBase });
+    let result: string;
+    let isError = false;
+    const ctx: ToolContext = {
+      ...baseCtx,
+      // Reuse this run's shared vfs/emit/signal/budget; the child gets its own
+      // context window at the next depth and compacts it independently. The shared
+      // budget just accumulates the whole tree's usage for reporting.
+      runSubagent: (subtask) =>
+        runAgent({
+          task: subtask,
+          tools,
+          vfs,
+          emit,
+          signal,
+          depth: depth + 1,
+          agentId: use.id,
+          parentAgentId: agentId,
+          budget,
+        }),
+    };
+    try {
+      result = await registry.execute(use.name, use.input, ctx);
+      if (signal.aborted) throw new CancelledError();
+    } catch (e) {
+      if (signal.aborted || e instanceof CancelledError) throw new CancelledError();
+      result = `Error: ${(e as Error).message}`;
+      isError = true;
+    }
+    emit({ type: 'tool_result', id: use.id, name: use.name, result, isError, ...eventBase });
+    return { use, result, isError };
+  };
+
+  const toToolResultBlock = (execution: ExecutedToolUse): ToolResultBlockParam => ({
+    type: 'tool_result',
+    tool_use_id: execution.use.id,
+    content: execution.result,
+    ...(execution.isError ? { is_error: true } : {}),
+  });
+
   let messages: MessageParam[] = [{ role: 'user', content: task }];
   // Tokens the model read on the most recent turn ≈ how full this agent's
   // context window currently is. Watched for compaction; 0 before the first turn.
@@ -191,44 +244,44 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       const toolUses = final.content.filter(
         (b): b is ToolUseBlock => b.type === 'tool_use',
       );
-      const results: ToolResultBlockParam[] = [];
-      for (const use of toolUses) {
-        if (signal.aborted) throw new CancelledError();
-        emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input, ...eventBase });
-        let result: string;
-        let isError = false;
-        const ctx: ToolContext = {
-          ...baseCtx,
-          // Reuse this run's shared vfs/emit/signal/budget; the child gets its own
-          // context window at the next depth and compacts it independently. The shared
-          // budget just accumulates the whole tree's usage for reporting.
-          runSubagent: (subtask) =>
-            runAgent({
-              task: subtask,
-              tools,
-              vfs,
-              emit,
-              signal,
-              depth: depth + 1,
-              agentId: use.id,
-              parentAgentId: agentId,
-              budget,
-            }),
-        };
+      const resultsByIndex: Array<ExecutedToolUse | undefined> = new Array(toolUses.length);
+      const indexedToolUses = toolUses.map((use, index) => ({ use, index }));
+      const taskPromises = indexedToolUses
+        .filter(({ use }) => use.name === 'Task')
+        .map(({ use, index }): Promise<TaskOutcome> =>
+          executeToolUse(use).then(
+            (execution) => ({ status: 'fulfilled', index, execution }),
+            (error) => ({ status: 'rejected', index, error }),
+          ),
+        );
+
+      let pendingError: unknown;
+      for (const { use, index } of indexedToolUses) {
+        if (use.name === 'Task') continue;
         try {
-          result = await registry.execute(use.name, use.input, ctx);
+          resultsByIndex[index] = await executeToolUse(use);
         } catch (e) {
-          result = `Error: ${(e as Error).message}`;
-          isError = true;
+          pendingError = e;
+          break;
         }
-        emit({ type: 'tool_result', id: use.id, name: use.name, result, isError, ...eventBase });
-        results.push({
-          type: 'tool_result',
-          tool_use_id: use.id,
-          content: result,
-          ...(isError ? { is_error: true } : {}),
-        });
       }
+
+      const taskOutcomes = await Promise.all(taskPromises);
+      for (const outcome of taskOutcomes) {
+        if (outcome.status === 'fulfilled') {
+          resultsByIndex[outcome.index] = outcome.execution;
+        } else if (pendingError === undefined) {
+          pendingError = outcome.error;
+        }
+      }
+      if (pendingError !== undefined) throw pendingError;
+
+      const results = resultsByIndex.map((execution, index) => {
+        if (!execution) {
+          throw new Error(`Missing tool result for tool_use ${toolUses[index]?.id ?? index}.`);
+        }
+        return toToolResultBlock(execution);
+      });
       messages.push({ role: 'user', content: [...results, ...pendingMedia] });
       pendingMedia.length = 0;
     }
