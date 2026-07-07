@@ -10,6 +10,7 @@ function makeCtx(signal?: AbortSignal, vfs = new VirtualWorkspace()): ToolContex
     normalizePath: normalizeWorkspacePath,
     emit: () => {},
     signal: signal ?? new AbortController().signal,
+    attachBlocks: () => {},
   };
 }
 

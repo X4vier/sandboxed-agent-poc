@@ -8,7 +8,7 @@ import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
 import { runAgent } from './agent/loop';
 import { TokenBudget } from './agent/types';
-import { getTokenBudgetLimit } from './agent/client';
+import { getTokenBudgetLimit, hasApiKey, setApiKey, clearApiKey } from './agent/client';
 
 interface AppState {
   staged: StagedFileInfo[];
@@ -28,6 +28,16 @@ export function registerIpc(window: BrowserWindow): void {
   const emit = (event: AgentEvent): void => {
     if (!window.isDestroyed()) window.webContents.send('agent:event', event);
   };
+
+  // API key is held only in the main process memory (see agent/client.ts). The
+  // renderer never receives it back — it can only set, clear, or check presence.
+  ipcMain.handle('agent:hasApiKey', (): boolean => hasApiKey());
+
+  ipcMain.handle('agent:setApiKey', (_e, key: unknown): void => {
+    setApiKey(requireString(key, 'key'));
+  });
+
+  ipcMain.handle('agent:clearApiKey', (): void => clearApiKey());
 
   ipcMain.handle('agent:stageFiles', async (): Promise<StagedFileInfo[]> => {
     const result = await dialog.showOpenDialog(window, {
@@ -63,6 +73,7 @@ export function registerIpc(window: BrowserWindow): void {
   ipcMain.handle('agent:startTask', async (_e, task: unknown): Promise<void> => {
     const trimmed = requireString(task, 'task').trim();
     if (trimmed.length === 0) throw new Error('Task must not be empty.');
+    if (!hasApiKey()) throw new Error('No Anthropic API key set. Enter your key to run a task.');
     if (state.running) throw new Error('A task is already running.');
 
     // Build a fresh in-memory workspace from the staged files (read-only reads).

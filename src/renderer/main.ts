@@ -1,4 +1,5 @@
 import type { AgentEvent, StagedFileInfo, WorkspaceFileInfo } from '../shared/ipc';
+import { renderMarkdown } from './markdown';
 
 const agent = window.agent;
 
@@ -36,7 +37,10 @@ document.getElementById('app')!.innerHTML = `
       <span class="seal">Sandboxed</span>
       <h1>In-memory agent workspace</h1>
     </div>
-    <div class="tokens" id="tokens">tokens: —</div>
+    <div class="topbar-right">
+      <div class="tokens" id="tokens">tokens: —</div>
+      <button id="change-key" class="ghost" title="Change API key">🔑 Change key</button>
+    </div>
   </header>
   <main class="columns">
     <section class="col">
@@ -73,6 +77,24 @@ document.getElementById('app')!.innerHTML = `
     </section>
   </main>
   <div class="toast" id="toast"></div>
+  <div class="gate" id="gate" hidden>
+    <form class="gate-card" id="gate-form">
+      <h2>Enter your Anthropic API key</h2>
+      <p>
+        The key is held in memory for this session only — it is never written to
+        disk and is discarded when you close the app.
+      </p>
+      <input
+        type="password"
+        id="api-key"
+        placeholder="sk-ant-…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div class="gate-error" id="gate-error" hidden></div>
+      <button type="submit" class="primary">Save key</button>
+    </form>
+  </div>
 `;
 
 // ---------- element refs ----------
@@ -91,6 +113,11 @@ const viewer = $('viewer');
 const viewerPath = $('viewer-path');
 const viewerBody = $('viewer-body');
 const toast = $('toast');
+const gate = $('gate');
+const gateForm = $<HTMLFormElement>('gate-form');
+const gateError = $('gate-error');
+const apiKeyInput = $<HTMLInputElement>('api-key');
+const changeKeyBtn = $<HTMLButtonElement>('change-key');
 
 let running = false;
 let selectedPath: string | null = null;
@@ -136,20 +163,26 @@ addBtn.addEventListener('click', async () => {
 
 // ---------- transcript ----------
 let currentAssistant: HTMLElement | null = null;
+let currentAssistantRaw = '';
 const toolRows = new Map<string, HTMLDetailsElement>();
 
 function clearTranscript(): void {
   transcriptEl.replaceChildren();
   currentAssistant = null;
+  currentAssistantRaw = '';
   toolRows.clear();
 }
 
 function appendAssistantText(text: string): void {
   if (!currentAssistant) {
-    currentAssistant = el('div', 'msg assistant');
+    currentAssistant = el('div', 'msg assistant markdown');
+    currentAssistantRaw = '';
     transcriptEl.append(currentAssistant);
   }
-  currentAssistant.textContent += text;
+  // Markdown needs the full block context, so we keep the raw text and re-render
+  // the whole message on each streaming delta.
+  currentAssistantRaw += text;
+  currentAssistant.replaceChildren(renderMarkdown(currentAssistantRaw));
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
@@ -297,5 +330,42 @@ agent.onAgentEvent((event: AgentEvent) => {
   }
 });
 
+// ---------- API key gate ----------
+function openGate(): void {
+  gate.hidden = false;
+  gateError.hidden = true;
+  apiKeyInput.value = '';
+  apiKeyInput.focus();
+}
+
+gateForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const key = apiKeyInput.value.trim();
+  if (key.length === 0) {
+    gateError.textContent = 'Enter a key to continue.';
+    gateError.hidden = false;
+    return;
+  }
+  try {
+    await agent.setApiKey(key);
+    apiKeyInput.value = '';
+    gate.hidden = true;
+    showToast('API key set for this session.');
+  } catch (err) {
+    gateError.textContent = (err as Error).message;
+    gateError.hidden = false;
+  }
+});
+
+changeKeyBtn.addEventListener('click', async () => {
+  await agent.clearApiKey();
+  openGate();
+});
+
+async function checkApiKey(): Promise<void> {
+  if (!(await agent.hasApiKey())) openGate();
+}
+
 // ---------- init ----------
+void checkApiKey();
 void agent.listStagedFiles().then(renderStaged);

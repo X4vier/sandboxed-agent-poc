@@ -15,13 +15,18 @@ npm install
 cp .env.example .env   # then edit
 ```
 
-Environment variables:
+The Anthropic API key is **entered in the app at startup**, held in memory for
+the session only, and never written to disk. There is nothing to configure for
+it — just launch the app and paste the key when prompted. Use the **🔑 Change
+key** button in the header to replace it during a session.
 
-| Variable            | Required | Default             | Purpose                                   |
-| ------------------- | -------- | ------------------- | ----------------------------------------- |
-| `ANTHROPIC_API_KEY` | yes      | —                   | Auth for the Messages API (PoC).          |
-| `AGENT_MODEL`       | no       | `claude-sonnet-4-6` | Model id.                                 |
-| `AGENT_TOKEN_BUDGET`| no       | `500000`            | Cumulative token ceiling per run.         |
+Environment variables (all optional):
+
+| Variable            | Default             | Purpose                                                        |
+| ------------------- | ------------------- | -------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY` | —                   | Dev convenience: seeds the session key so you skip the prompt. |
+| `AGENT_MODEL`       | `claude-sonnet-5`   | Model id.                                                      |
+| `AGENT_TOKEN_BUDGET`| `500000`            | Cumulative token ceiling per run.                             |
 
 ## Run
 
@@ -32,7 +37,9 @@ npm run typecheck  # strict tsc, no emit
 npm test           # vitest (validator, workspace, tools, QuickJS, loop)
 ```
 
-`ANTHROPIC_API_KEY` must be set in the environment `npm run dev` inherits.
+On launch the app prompts for your Anthropic API key (unless `ANTHROPIC_API_KEY`
+is set in the environment `npm run dev` inherits, in which case it is used as a
+seed). The key stays in main-process memory and is discarded when the app exits.
 
 ## Architecture
 
@@ -73,6 +80,10 @@ Renderer (UI) ── IPC (contextBridge) ── Main process
   workspace content to disk are the two user-initiated export handlers in
   `src/main/ipc.ts` (`exportFile`, `exportAll`). There is no temp-file spill, no
   on-disk cache, no debug dump.
+- **Ephemeral API key.** The key is entered in the UI and held only in a
+  main-process variable (`src/main/agent/client.ts`). It is never persisted, never
+  sent back to the renderer (which can only set, clear, or check its presence),
+  and is gone when the process exits.
 - **Zero network, zero shell.** The agent has no HTTP/fetch tool, no bash, no
   shell of any kind. The only network traffic in the app is the Messages API
   call from the main process.

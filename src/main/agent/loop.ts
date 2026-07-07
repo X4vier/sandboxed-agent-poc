@@ -52,7 +52,16 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
   const effort = getEffort();
   const client: Anthropic = getClient();
 
-  const ctx: ToolContext = { vfs, normalizePath: normalizeWorkspacePath, emit, signal };
+  // Media queued by tools during a turn; appended to that turn's user message
+  // (after the tool_result blocks) and cleared each iteration.
+  const pendingMedia: ContentBlockParam[] = [];
+  const ctx: ToolContext = {
+    vfs,
+    normalizePath: normalizeWorkspacePath,
+    emit,
+    signal,
+    attachBlocks: (blocks) => pendingMedia.push(...blocks),
+  };
   const messages: MessageParam[] = [{ role: 'user', content: task }];
 
   try {
@@ -113,7 +122,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
           ...(isError ? { is_error: true } : {}),
         });
       }
-      messages.push({ role: 'user', content: results });
+      messages.push({ role: 'user', content: [...results, ...pendingMedia] });
+      pendingMedia.length = 0;
     }
 
     throw new Error(`Reached the ${MAX_ITERATIONS}-iteration limit without finishing.`);

@@ -1,3 +1,4 @@
+import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import type { AgentEvent } from '../../shared/ipc';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 
@@ -15,6 +16,12 @@ export interface ToolContext {
   normalizePath(p: string): string;
   emit(event: AgentEvent): void;
   signal: AbortSignal;
+  /**
+   * Queue rich content blocks (images, PDFs) to be appended to the user turn
+   * that carries this batch of tool results. Used by tools that surface media
+   * to the model rather than plain text.
+   */
+  attachBlocks(blocks: ContentBlockParam[]): void;
 }
 
 export interface AgentTool<In = unknown> {

@@ -16,6 +16,7 @@ function makeCtx(vfs = new VirtualWorkspace()): ToolContext {
     normalizePath: normalizeWorkspacePath,
     emit: () => {},
     signal: new AbortController().signal,
+    attachBlocks: () => {},
   };
 }
 

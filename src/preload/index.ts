@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { AgentBridge, AgentEvent } from '../shared/ipc';
 
 const bridge: AgentBridge = {
+  hasApiKey: () => ipcRenderer.invoke('agent:hasApiKey'),
+  setApiKey: (key) => ipcRenderer.invoke('agent:setApiKey', key),
+  clearApiKey: () => ipcRenderer.invoke('agent:clearApiKey'),
   stageFiles: () => ipcRenderer.invoke('agent:stageFiles'),
   removeStagedFile: (path) => ipcRenderer.invoke('agent:removeStagedFile', path),
   listStagedFiles: () => ipcRenderer.invoke('agent:listStagedFiles'),

@@ -38,6 +38,12 @@ export interface TokenUsage {
 
 /** The complete contextBridge surface exposed to the renderer. */
 export interface AgentBridge {
+  /** Whether an ephemeral API key is currently set in the main process. */
+  hasApiKey(): Promise<boolean>;
+  /** Provide an API key for this session; held in memory only, never persisted. */
+  setApiKey(key: string): Promise<void>;
+  /** Discard the in-memory API key. */
+  clearApiKey(): Promise<void>;
   stageFiles(): Promise<StagedFileInfo[]>;
   removeStagedFile(path: string): Promise<StagedFileInfo[]>;
   listStagedFiles(): Promise<StagedFileInfo[]>;

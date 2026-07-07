@@ -7,6 +7,8 @@ import {
   writeFileTool,
 } from './fileTools';
 import { runJavascriptTool } from './runJavascript';
+import { createReadDocumentTool } from './documentTools';
+import { createExtractorRegistry } from '../documents';
 
 /** The complete, fixed tool set available to the agent. */
 export function buildTools(): AgentTool[] {
@@ -16,6 +18,7 @@ export function buildTools(): AgentTool[] {
     editFileTool,
     listFilesTool,
     searchFilesTool,
+    createReadDocumentTool(createExtractorRegistry()),
     runJavascriptTool,
   ];
 }

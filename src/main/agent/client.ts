@@ -6,15 +6,39 @@ import Anthropic from '@anthropic-ai/sdk';
  * the codebase references the SDK constructor.
  */
 
+/**
+ * The API key lives only in this module-level variable, held in memory for the
+ * lifetime of the process. It is never written to disk and is discarded when
+ * the app closes. The user supplies it through the UI at startup (see the
+ * `agent:setApiKey` IPC handler); an ambient ANTHROPIC_API_KEY, if present, is
+ * used as a dev-only seed so contributors need not retype it each launch.
+ */
+let apiKey: string | null = process.env['ANTHROPIC_API_KEY']?.trim() || null;
 let client: Anthropic | null = null;
+
+/** Store an ephemeral API key for this session and reset the cached client. */
+export function setApiKey(key: string): void {
+  const trimmed = key.trim();
+  if (!trimmed) throw new Error('API key must not be empty.');
+  apiKey = trimmed;
+  client = null;
+}
+
+/** Discard the in-memory key (e.g. when the user chooses to change it). */
+export function clearApiKey(): void {
+  apiKey = null;
+  client = null;
+}
+
+/** Whether a key is currently available to construct a client. */
+export function hasApiKey(): boolean {
+  return apiKey !== null;
+}
 
 export function getClient(): Anthropic {
   if (!client) {
-    const apiKey = process.env['ANTHROPIC_API_KEY'];
     if (!apiKey) {
-      throw new Error(
-        'ANTHROPIC_API_KEY is not set. Set it in your environment before running a task.',
-      );
+      throw new Error('No Anthropic API key set. Enter your key to run a task.');
     }
     client = new Anthropic({ apiKey });
   }
