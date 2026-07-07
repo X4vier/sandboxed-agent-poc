@@ -76,6 +76,42 @@ describe('run_javascript — host file functions', () => {
   });
 });
 
+describe('run_javascript — file mode', () => {
+  it('executes a script by workspace path', async () => {
+    const ctx = makeCtx();
+    ctx.vfs.writeFile('calc.js', 'log("from file"); 6 * 7');
+    const r = await runJavascriptTool.handler({ file: 'calc.js' }, ctx);
+    expect(r).toContain('from file');
+    expect(r).toContain('42');
+  });
+
+  it('file scripts get the same host functions', async () => {
+    const ctx = makeCtx();
+    ctx.vfs.stageProvided('in.txt', Buffer.from('data'));
+    ctx.vfs.writeFile('xform.js', 'writeFile("out.txt", readFile("in.txt").toUpperCase()); "ok"');
+    const r = await runJavascriptTool.handler({ file: 'xform.js' }, ctx);
+    expect(r).toContain('ok');
+    expect(ctx.vfs.readText('out.txt')).toEqual({ ok: true, text: 'DATA' });
+  });
+
+  it('reports a missing file', async () => {
+    const r = await runJavascriptTool.handler({ file: 'nope.js' }, makeCtx());
+    expect(r).toMatch(/does not exist/i);
+  });
+
+  it('rejects supplying both code and file', async () => {
+    const ctx = makeCtx();
+    ctx.vfs.writeFile('a.js', '1');
+    const r = await runJavascriptTool.handler({ code: '1', file: 'a.js' }, ctx);
+    expect(r).toMatch(/either.*not both/i);
+  });
+
+  it('rejects supplying neither code nor file', async () => {
+    const r = await runJavascriptTool.handler({}, makeCtx());
+    expect(r).toMatch(/either "code".*or "file"/i);
+  });
+});
+
 describe('run_javascript — limits', () => {
   it('interrupts an infinite loop at the deadline and stays usable', async () => {
     const ctx = makeCtx();

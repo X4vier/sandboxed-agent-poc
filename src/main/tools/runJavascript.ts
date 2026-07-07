@@ -1,6 +1,6 @@
 import { getQuickJS, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten';
 import type { AgentTool, ToolContext } from '../agent/types';
-import { getString } from './inputs';
+import { getOptionalString } from './inputs';
 
 const MEMORY_LIMIT = 256 * 1024 * 1024; // 256MB
 const STACK_LIMIT = 1024 * 1024; // 1MB
@@ -147,12 +147,38 @@ function formatOutput(o: {
   return parts.join('\n');
 }
 
+/**
+ * Resolve the JavaScript source to run from either inline `code` or a workspace
+ * `file` path — exactly one must be supplied. Returns the source string, or an
+ * error message to hand straight back to the model.
+ */
+function resolveSource(input: unknown, ctx: ToolContext): { code: string } | { error: string } {
+  const code = getOptionalString(input, 'code');
+  const file = getOptionalString(input, 'file');
+  if (code !== undefined && file !== undefined) {
+    return { error: 'Provide either "code" (inline) or "file" (a workspace path), not both.' };
+  }
+  if (code !== undefined) return { code };
+  if (file !== undefined) {
+    const key = ctx.normalizePath(file);
+    if (!ctx.vfs.has(key)) return { error: `File does not exist: "${key}".` };
+    const decoded = ctx.vfs.readText(key);
+    if (!decoded.ok) return { error: `Cannot read "${key}" as UTF-8 text — it is not a text file.` };
+    return { code: decoded.text };
+  }
+  return { error: 'Provide either "code" (inline JavaScript) or "file" (a workspace path to a .js file).' };
+}
+
 export const runJavascriptTool: AgentTool = {
   name: 'run_javascript',
   description:
     'Execute JavaScript in a sandboxed QuickJS (WASM) interpreter to compute over workspace files. ' +
-    'Input: { "code": "<JavaScript source>" }. The completion value of the code, a log() transcript, ' +
-    'and any thrown error are returned to you.\n\n' +
+    'Input: { "code": "<JavaScript source>" } OR { "file": "<workspace path to a .js file>" } — ' +
+    'supply exactly one. Use inline `code` for quick, one-off computation (the common case). Write a ' +
+    '.js file with Write/Edit and pass `file` when the script is substantial, will be reused, is part ' +
+    'of the deliverable, or you expect to iterate on it (edit one line and re-run rather than resend ' +
+    'the whole block). Either way, the completion value of the code, a log() transcript, and any thrown ' +
+    'error are returned to you.\n\n' +
     'Injected host functions (synchronous):\n' +
     '  readFile(path) -> string           // UTF-8 contents; throws for missing/binary files\n' +
     '  writeFile(path, content) -> void    // create or overwrite a workspace file\n' +
@@ -164,9 +190,18 @@ export const runJavascriptTool: AgentTool = {
     'Limits: 256MB memory, 30s wall clock.',
   inputSchema: {
     type: 'object',
-    properties: { code: { type: 'string', description: 'JavaScript source to execute.' } },
-    required: ['code'],
+    properties: {
+      code: { type: 'string', description: 'JavaScript source to execute inline.' },
+      file: {
+        type: 'string',
+        description: 'Workspace-relative path to a .js file to execute. Mutually exclusive with code.',
+      },
+    },
     additionalProperties: false,
   },
-  handler: async (input, ctx) => runInGuest(getString(input, 'code'), ctx),
+  handler: async (input, ctx) => {
+    const resolved = resolveSource(input, ctx);
+    if ('error' in resolved) return resolved.error;
+    return runInGuest(resolved.code, ctx);
+  },
 };

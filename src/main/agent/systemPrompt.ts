@@ -17,7 +17,7 @@ export function buildSystemPrompt(tools: AgentTool[], depth = 0): string {
     '- Your workspace is an in-memory virtual filesystem containing files the user staged plus any you create. Nothing is on disk.',
     '- IMPORTANT: all paths are WORKSPACE-RELATIVE and use forward slashes (e.g. "data/input.csv"). Never use absolute paths — there is no "C:\\...", "/home/...", or drive letter. Absolute paths and "../" escapes are rejected.',
     '- There is NO shell, NO network, and NO internet access. You cannot run commands or fetch URLs.',
-    '- You can compute with the run_javascript tool, which executes JavaScript in a sandboxed interpreter with no network or filesystem access beyond its injected readFile/writeFile/listFiles/log functions.',
+    '- You can compute with the run_javascript tool, which executes JavaScript in a sandboxed interpreter with no network or filesystem access beyond its injected readFile/writeFile/listFiles/log functions. Pass inline `code` for quick computation; write a .js file and pass `file` when the script is substantial or you will iterate on it.',
     '',
     'Available tools:',
     toolList,
