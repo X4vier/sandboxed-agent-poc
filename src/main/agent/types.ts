@@ -26,14 +26,28 @@ export interface AgentTool<In = unknown> {
 
 /** Shared, mutable cumulative token counter across an entire agent tree. */
 export class TokenBudget {
-  used = 0;
+  inputTokens = 0;
+  outputTokens = 0;
   constructor(public readonly limit: number) {}
 
   add(inputTokens: number, outputTokens: number): void {
-    this.used += inputTokens + outputTokens;
+    this.inputTokens += inputTokens;
+    this.outputTokens += outputTokens;
+  }
+
+  get used(): number {
+    return this.inputTokens + this.outputTokens;
   }
 
   get exceeded(): boolean {
     return this.used >= this.limit;
+  }
+
+  snapshot(): { inputTokens: number; outputTokens: number; totalTokens: number } {
+    return {
+      inputTokens: this.inputTokens,
+      outputTokens: this.outputTokens,
+      totalTokens: this.used,
+    };
   }
 }

@@ -1,0 +1,119 @@
+import type Anthropic from '@anthropic-ai/sdk';
+import type {
+  ContentBlockParam,
+  MessageParam,
+  Tool,
+  ToolResultBlockParam,
+  ToolUseBlock,
+} from '@anthropic-ai/sdk/resources/messages';
+import type { AgentEvent } from '../../shared/ipc';
+import { normalizeWorkspacePath } from '../workspace/normalizePath';
+import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
+import { ToolRegistry } from '../tools/registry';
+import type { AgentTool, ToolContext, TokenBudget } from './types';
+import { AGENT_MODEL, getClient } from './client';
+import { buildSystemPrompt } from './systemPrompt';
+
+const MAX_ITERATIONS = 30;
+const MAX_TOKENS_PER_TURN = 8192;
+
+export interface AgentRunOptions {
+  task: string;
+  tools: AgentTool[];
+  vfs: VirtualWorkspace;
+  emit: (event: AgentEvent) => void;
+  signal: AbortSignal;
+  depth: number;
+  budget: TokenBudget;
+}
+
+class CancelledError extends Error {
+  constructor() {
+    super('Run cancelled.');
+    this.name = 'CancelledError';
+  }
+}
+
+function extractText(content: ContentBlockParam[]): string {
+  return content
+    .filter((b): b is Extract<ContentBlockParam, { type: 'text' }> => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+}
+
+export async function runAgent(opts: AgentRunOptions): Promise<string> {
+  const { task, tools, vfs, emit, signal, depth, budget } = opts;
+  const isRoot = depth === 0;
+  const registry = new ToolRegistry(tools);
+  const apiTools = registry.toApiTools() as unknown as Tool[];
+  const system = buildSystemPrompt(tools);
+  const client: Anthropic = getClient();
+
+  const ctx: ToolContext = { vfs, normalizePath: normalizeWorkspacePath, emit, signal };
+  const messages: MessageParam[] = [{ role: 'user', content: task }];
+
+  try {
+    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      if (signal.aborted) throw new CancelledError();
+      if (budget.exceeded) {
+        throw new Error(
+          `Token budget of ${budget.limit} exceeded (used ${budget.used}). Stopping the run.`,
+        );
+      }
+
+      const stream = client.messages.stream(
+        { model: AGENT_MODEL, max_tokens: MAX_TOKENS_PER_TURN, system, messages, tools: apiTools },
+        { signal },
+      );
+      stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta }));
+
+      const final = await stream.finalMessage();
+      budget.add(final.usage.input_tokens ?? 0, final.usage.output_tokens);
+      emit({ type: 'turn_complete', usage: budget.snapshot() });
+
+      const assistantContent = final.content as ContentBlockParam[];
+      messages.push({ role: 'assistant', content: assistantContent });
+
+      if (final.stop_reason !== 'tool_use') {
+        const text = extractText(assistantContent);
+        if (isRoot) emit({ type: 'done', summary: text, usage: budget.snapshot() });
+        return text;
+      }
+
+      const toolUses = final.content.filter(
+        (b): b is ToolUseBlock => b.type === 'tool_use',
+      );
+      const results: ToolResultBlockParam[] = [];
+      for (const use of toolUses) {
+        if (signal.aborted) throw new CancelledError();
+        emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input });
+        let result: string;
+        let isError = false;
+        try {
+          result = await registry.execute(use.name, use.input, ctx);
+        } catch (e) {
+          result = `Error: ${(e as Error).message}`;
+          isError = true;
+        }
+        emit({ type: 'tool_result', id: use.id, name: use.name, result, isError });
+        results.push({
+          type: 'tool_result',
+          tool_use_id: use.id,
+          content: result,
+          ...(isError ? { is_error: true } : {}),
+        });
+      }
+      messages.push({ role: 'user', content: results });
+    }
+
+    throw new Error(`Reached the ${MAX_ITERATIONS}-iteration limit without finishing.`);
+  } catch (e) {
+    if (e instanceof CancelledError) {
+      if (isRoot) emit({ type: 'error', message: 'Run cancelled.' });
+      throw e;
+    }
+    const message = (e as Error).message ?? String(e);
+    if (isRoot) emit({ type: 'error', message });
+    throw e;
+  }
+}
