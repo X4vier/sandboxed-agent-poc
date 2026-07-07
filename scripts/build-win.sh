@@ -58,9 +58,14 @@ rsync -a --delete \
   "$REPO_ROOT/" "$ISO_WSL/"
 
 # --- install + build on Windows via interop -------------------------------
+# cmd.exe cannot use this ext4 checkout's \\wsl.localhost\... path as its CWD,
+# and when launched with a UNC CWD its `cd /d` is broken (fails even for
+# C:\Windows). So we enter the isolated dir *in bash* first — it lives under
+# /mnt/c, so cmd.exe then inherits a proper C:\ CWD and no `cd /d` is needed.
+# The subshell keeps this CWD change from leaking into artifact collection.
 ISO_WIN="$(wslpath -w "$ISO_WSL")"
 echo "Running Windows npm install + build:win in $ISO_WIN"
-cmd.exe /c "cd /d \"$ISO_WIN\" && npm install --no-fund --no-audit && npm run build:win" \
+( cd "$ISO_WSL" && cmd.exe /c "npm install --no-fund --no-audit && npm run build:win" ) \
   || { echo "Windows build failed." >&2; exit 1; }
 
 # --- collect the artifact -------------------------------------------------
