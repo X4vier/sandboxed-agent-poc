@@ -54,7 +54,7 @@ beforeEach(() => {
 describe('runAgent loop', () => {
   it('executes tool calls and returns the final text', async () => {
     queue.push({
-      toolUses: [{ id: 't1', name: 'write_file', input: { path: 'out.txt', content: 'hi' } }],
+      toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'hi' } }],
       stopReason: 'tool_use',
     });
     queue.push({ text: 'Done. Created out.txt.', stopReason: 'end_turn' });
@@ -83,7 +83,7 @@ describe('runAgent loop', () => {
 
   it('turns a throwing tool into an is_error result without crashing', async () => {
     queue.push({
-      toolUses: [{ id: 't1', name: 'write_file', input: { path: '../escape.txt', content: 'x' } }],
+      toolUses: [{ id: 't1', name: 'Write', input: { file_path: '../escape.txt', content: 'x' } }],
       stopReason: 'tool_use',
     });
     queue.push({ text: 'The write was rejected.', stopReason: 'end_turn' });

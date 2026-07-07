@@ -24,6 +24,15 @@ export function getOptionalString(input: unknown, field: string): string | undef
   return v;
 }
 
+export function getOptionalInteger(input: unknown, field: string): number | undefined {
+  const v = asRecord(input)[field];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'number' || !Number.isInteger(v)) {
+    throw new Error(`Parameter "${field}" must be an integer when provided.`);
+  }
+  return v;
+}
+
 export function getOptionalBoolean(input: unknown, field: string): boolean {
   const v = asRecord(input)[field];
   if (v === undefined || v === null) return false;

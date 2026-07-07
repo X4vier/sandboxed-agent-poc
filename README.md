@@ -62,9 +62,12 @@ Renderer (UI) ── IPC (contextBridge) ── Main process
   and token budget.
 - **VirtualWorkspace** (`src/main/workspace`) is a `Map`-backed VFS keyed by
   normalized POSIX-relative paths, tracking `provided | created | modified`.
-- **Tools** (`src/main/tools`): `read_file`, `write_file`, `edit_file`,
-  `list_files`, `search_files`, `run_javascript`. Each reaches the OS only
-  through an injected `ToolContext`.
+- **Tools** (`src/main/tools`): `Read`, `Write`, `Edit`, `Glob`, `Grep`,
+  `list_files`, `read_document`, `run_javascript`. Names and parameter shapes
+  mirror Claude Code's bash-flavored tool API (`cat -n` reads, regex Grep, glob
+  matching) so the model hits fewer malformed calls; paths remain
+  workspace-relative rather than absolute. Each reaches the OS only through an
+  injected `ToolContext`.
 - **Path validator** (`src/main/workspace/normalizePath.ts`) is used by every
   VFS operation and every guest-injected file function.
 - **Client** (`src/main/agent/client.ts`) is the only place the SDK client is

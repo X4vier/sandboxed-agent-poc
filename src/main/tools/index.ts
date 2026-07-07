@@ -1,10 +1,11 @@
 import type { AgentTool } from '../agent/types';
 import {
-  editFileTool,
+  editTool,
+  globTool,
+  grepTool,
   listFilesTool,
-  readFileTool,
-  searchFilesTool,
-  writeFileTool,
+  readTool,
+  writeTool,
 } from './fileTools';
 import { runJavascriptTool } from './runJavascript';
 import { createReadDocumentTool } from './documentTools';
@@ -13,11 +14,12 @@ import { createExtractorRegistry } from '../documents';
 /** The complete, fixed tool set available to the agent. */
 export function buildTools(): AgentTool[] {
   return [
-    readFileTool,
-    writeFileTool,
-    editFileTool,
+    readTool,
+    writeTool,
+    editTool,
+    globTool,
+    grepTool,
     listFilesTool,
-    searchFilesTool,
     createReadDocumentTool(createExtractorRegistry()),
     runJavascriptTool,
   ];

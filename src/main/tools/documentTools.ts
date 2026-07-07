@@ -38,7 +38,7 @@ export function createReadDocumentTool(registry: ExtractorRegistry): AgentTool {
       'Read a non-plain-text document from the workspace by converting it to model-readable ' +
       `content. Input: { "path": "<workspace-relative path>" }. Supported types: ${supported}. ` +
       'Extracted text is returned directly; images and un-parseable PDFs are attached so you can ' +
-      'see them. Use read_file for plain text (.txt, .md, source code).',
+      'see them. Use Read for plain text (.txt, .md, source code).',
     inputSchema: {
       type: 'object',
       properties: { path: { type: 'string', description: 'Workspace-relative path.' } },
@@ -50,7 +50,7 @@ export function createReadDocumentTool(registry: ExtractorRegistry): AgentTool {
       const ext = extensionOf(key);
       const extractor = registry.get(ext);
       if (!extractor) {
-        return `No reader for ".${ext}" files. Supported document types: ${supported}. For plain text, use read_file.`;
+        return `No reader for ".${ext}" files. Supported document types: ${supported}. For plain text, use Read.`;
       }
       const content = ctx.vfs.readBuffer(key); // throws if missing → surfaced as is_error
       const result = await extractor.extract({ name: key, content });
