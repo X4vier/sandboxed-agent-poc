@@ -25,14 +25,14 @@ describe('pdfExtractor', () => {
     expect(result.attachments).toBeUndefined();
   });
 
-  it('inflates FlateDecode streams before extracting', () => {
+  it('inflates FlateDecode streams before extracting', async () => {
     const body = deflateSync(Buffer.from('BT (Compressed text here) Tj ET', 'latin1'));
     const pdf = pdfWith(body, '/Filter /FlateDecode ');
     const result = await pdfExtractor.extract({ name: 'z.pdf', content: pdf });
     expect(result.text).toBe('Compressed text here');
   });
 
-  it('preserves line breaks across positioning operators', () => {
+  it('preserves line breaks across positioning operators', async () => {
     const pdf = pdfWith(
       Buffer.from('BT 72 720 Td (Line one) Tj 0 -14 Td (Line two) Tj ET', 'latin1'),
     );
@@ -40,13 +40,13 @@ describe('pdfExtractor', () => {
     expect(result.text).toBe('Line one\nLine two');
   });
 
-  it('decodes escape sequences in literal strings', () => {
+  it('decodes escape sequences in literal strings', async () => {
     const pdf = pdfWith(Buffer.from('BT (a\\(b\\) c) Tj ET', 'latin1'));
     const result = await pdfExtractor.extract({ name: 'esc.pdf', content: pdf });
     expect(result.text).toBe('a(b) c');
   });
 
-  it('falls back to a native PDF attachment when there is no text layer', () => {
+  it('falls back to a native PDF attachment when there is no text layer', async () => {
     // An image-only stream carries no BT operator, so no text is recovered.
     const pdf = pdfWith(Buffer.from([0x00, 0x01, 0x02]), '/Subtype /Image ');
     const result = await pdfExtractor.extract({ name: 'scan.pdf', content: pdf });
@@ -62,7 +62,7 @@ describe('extractor registry', () => {
     const registry = createExtractorRegistry();
     expect(registry.get('pdf')).toBe(pdfExtractor);
     expect(registry.get('PDF')).toBe(pdfExtractor); // case-insensitive
-    expect(registry.get('docx')).toBeUndefined();
+    expect(registry.get('xlsx')).toBeUndefined();
     expect(registry.supportedExtensions()).toContain('pdf');
   });
 });
@@ -100,9 +100,9 @@ describe('read_document tool', () => {
 
   it('reports unsupported extensions instead of throwing', async () => {
     const vfs = new VirtualWorkspace();
-    vfs.stageProvided('notes.docx', Buffer.from('PK\x03\x04'));
+    vfs.stageProvided('notes.xlsx', Buffer.from('PK\x03\x04'));
     const tool = createReadDocumentTool(createExtractorRegistry());
-    const out = await tool.handler({ path: 'notes.docx' }, makeCtx(vfs, []));
-    expect(out).toMatch(/no reader for "\.docx"/i);
+    const out = await tool.handler({ path: 'notes.xlsx' }, makeCtx(vfs, []));
+    expect(out).toMatch(/no reader for "\.xlsx"/i);
   });
 });

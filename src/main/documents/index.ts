@@ -1,5 +1,6 @@
 import { ExtractorRegistry } from './registry';
 import { pdfExtractor } from './extractors/pdf';
+import { docxExtractor } from './extractors/docx';
 
 /**
  * Build the registry of document extractors available to the agent. To support
@@ -7,7 +8,7 @@ import { pdfExtractor } from './extractors/pdf';
  * one `.register(...)` call here.
  */
 export function createExtractorRegistry(): ExtractorRegistry {
-  return new ExtractorRegistry().register(pdfExtractor);
+  return new ExtractorRegistry().register(pdfExtractor).register(docxExtractor);
 }
 
 export { ExtractorRegistry } from './registry';
