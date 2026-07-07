@@ -17,6 +17,7 @@ files:
   - '!{README.md,plan.md,electron-builder.yml}'
 # Single self-contained .exe — no install step, runs from anywhere.
 win:
+  icon: build/icon.ico
   target:
     - target: portable
       arch:
