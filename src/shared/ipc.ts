@@ -34,19 +34,34 @@ export interface TodoItem {
 }
 
 /**
- * Streamed agent events, mirrored to the renderer over IPC. `depth` is the
- * nesting level of the agent that produced the event (0 = root, >0 = a
- * subagent spawned via the Task tool); the renderer uses it to nest output.
+ * Identity shared by streamed events from one logical agent run. `agentId` is
+ * the stable routing key (`root` for the root agent; a Task tool_use id for a
+ * subagent). `depth` remains useful display metadata.
+ */
+export interface AgentEventIdentity {
+  agentId: string;
+  parentAgentId: string | null;
+  depth: number;
+}
+
+/**
+ * Streamed agent events, mirrored to the renderer over IPC.
  */
 export type AgentEvent =
-  | { type: 'assistant_text_delta'; text: string; depth: number }
-  | { type: 'tool_call'; id: string; name: string; input: unknown; depth: number }
-  | { type: 'tool_result'; id: string; name: string; result: string; isError: boolean; depth: number }
-  | { type: 'todos'; todos: TodoItem[]; depth: number }
-  | { type: 'compaction'; depth: number; contextTokens: number }
-  | { type: 'turn_complete'; usage: TokenUsage }
-  | { type: 'error'; message: string }
-  | { type: 'done'; summary: string; usage: TokenUsage };
+  | ({ type: 'assistant_text_delta'; text: string } & AgentEventIdentity)
+  | ({ type: 'tool_call'; id: string; name: string; input: unknown } & AgentEventIdentity)
+  | ({
+      type: 'tool_result';
+      id: string;
+      name: string;
+      result: string;
+      isError: boolean;
+    } & AgentEventIdentity)
+  | ({ type: 'todos'; todos: TodoItem[] } & AgentEventIdentity)
+  | ({ type: 'compaction'; contextTokens: number } & AgentEventIdentity)
+  | ({ type: 'turn_complete'; usage: TokenUsage } & AgentEventIdentity)
+  | ({ type: 'error'; message: string } & AgentEventIdentity)
+  | ({ type: 'done'; summary: string; usage: TokenUsage } & AgentEventIdentity);
 
 export interface TokenUsage {
   inputTokens: number;

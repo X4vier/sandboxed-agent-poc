@@ -42,6 +42,8 @@ export interface AgentRunOptions {
   emit: (event: AgentEvent) => void;
   signal: AbortSignal;
   depth: number;
+  agentId: string;
+  parentAgentId: string | null;
   budget: TokenBudget;
 }
 
@@ -119,8 +121,9 @@ async function compactHistory(
 }
 
 export async function runAgent(opts: AgentRunOptions): Promise<string> {
-  const { task, tools, vfs, emit, signal, depth, budget } = opts;
+  const { task, tools, vfs, emit, signal, depth, agentId, parentAgentId, budget } = opts;
   const isRoot = depth === 0;
+  const eventBase = { agentId, parentAgentId, depth };
   const registry = new ToolRegistry(tools);
   const apiTools = registry.toApiTools() as unknown as Tool[];
   const system = buildSystemPrompt(tools, depth);
@@ -131,18 +134,15 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
   // Media queued by tools during a turn; appended to that turn's user message
   // (after the tool_result blocks) and cleared each iteration.
   const pendingMedia: ContentBlockParam[] = [];
-  const ctx: ToolContext = {
+  const baseCtx: Omit<ToolContext, 'runSubagent'> = {
     vfs,
     normalizePath: normalizeWorkspacePath,
     emit,
     signal,
     attachBlocks: (blocks) => pendingMedia.push(...blocks),
     depth,
-    // Reuse this run's shared vfs/emit/signal/budget; the child gets its own
-    // context window at the next depth and compacts it independently. The shared
-    // budget just accumulates the whole tree's usage for reporting.
-    runSubagent: (subtask) =>
-      runAgent({ task: subtask, tools, vfs, emit, signal, depth: depth + 1, budget }),
+    agentId,
+    parentAgentId,
   };
   let messages: MessageParam[] = [{ role: 'user', content: task }];
   // Tokens the model read on the most recent turn ≈ how full this agent's
@@ -156,7 +156,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       // Approaching the window: summarize history and continue rather than
       // letting the next request overflow. Never aborts the run.
       if (contextTokens > compactAt) {
-        emit({ type: 'compaction', depth, contextTokens });
+        emit({ type: 'compaction', contextTokens, ...eventBase });
         messages = await compactHistory(client, system, apiTools, messages, task, effort, budget, signal);
         contextTokens = 0;
       }
@@ -172,19 +172,19 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
         },
         { signal },
       );
-      stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta, depth }));
+      stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta, ...eventBase }));
 
       const final = await stream.finalMessage();
       contextTokens = final.usage.input_tokens ?? 0;
       budget.add(contextTokens, final.usage.output_tokens);
-      emit({ type: 'turn_complete', usage: budget.snapshot() });
+      emit({ type: 'turn_complete', usage: budget.snapshot(), ...eventBase });
 
       const assistantContent = final.content as ContentBlockParam[];
       messages.push({ role: 'assistant', content: assistantContent });
 
       if (final.stop_reason !== 'tool_use') {
         const text = extractText(assistantContent);
-        if (isRoot) emit({ type: 'done', summary: text, usage: budget.snapshot() });
+        if (isRoot) emit({ type: 'done', summary: text, usage: budget.snapshot(), ...eventBase });
         return text;
       }
 
@@ -194,16 +194,34 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       const results: ToolResultBlockParam[] = [];
       for (const use of toolUses) {
         if (signal.aborted) throw new CancelledError();
-        emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input, depth });
+        emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input, ...eventBase });
         let result: string;
         let isError = false;
+        const ctx: ToolContext = {
+          ...baseCtx,
+          // Reuse this run's shared vfs/emit/signal/budget; the child gets its own
+          // context window at the next depth and compacts it independently. The shared
+          // budget just accumulates the whole tree's usage for reporting.
+          runSubagent: (subtask) =>
+            runAgent({
+              task: subtask,
+              tools,
+              vfs,
+              emit,
+              signal,
+              depth: depth + 1,
+              agentId: use.id,
+              parentAgentId: agentId,
+              budget,
+            }),
+        };
         try {
           result = await registry.execute(use.name, use.input, ctx);
         } catch (e) {
           result = `Error: ${(e as Error).message}`;
           isError = true;
         }
-        emit({ type: 'tool_result', id: use.id, name: use.name, result, isError, depth });
+        emit({ type: 'tool_result', id: use.id, name: use.name, result, isError, ...eventBase });
         results.push({
           type: 'tool_result',
           tool_use_id: use.id,
@@ -218,11 +236,11 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     throw new Error(`Reached the ${MAX_ITERATIONS}-iteration limit without finishing.`);
   } catch (e) {
     if (e instanceof CancelledError) {
-      if (isRoot) emit({ type: 'error', message: 'Run cancelled.' });
+      if (isRoot) emit({ type: 'error', message: 'Run cancelled.', ...eventBase });
       throw e;
     }
     const message = (e as Error).message ?? String(e);
-    if (isRoot) emit({ type: 'error', message });
+    if (isRoot) emit({ type: 'error', message, ...eventBase });
     throw e;
   }
 }

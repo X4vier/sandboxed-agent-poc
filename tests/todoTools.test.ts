@@ -13,6 +13,8 @@ function makeCtx(events: AgentEvent[], depth = 0): ToolContext {
     signal: new AbortController().signal,
     attachBlocks: () => {},
     depth,
+    agentId: depth === 0 ? 'root' : `agent-${depth}`,
+    parentAgentId: depth === 0 ? null : 'root',
     runSubagent: async () => '',
   };
 }
@@ -37,9 +39,10 @@ describe('TodoWrite', () => {
     const todoEvent = events.find((e) => e.type === 'todos');
     expect(todoEvent && todoEvent.type === 'todos' && todoEvent.todos.length).toBe(3);
     expect(todoEvent && todoEvent.type === 'todos' && todoEvent.depth).toBe(0);
+    expect(todoEvent).toMatchObject({ agentId: 'root', parentAgentId: null });
   });
 
-  it('carries the agent depth on the emitted event', async () => {
+  it('carries agent identity and depth on the emitted event', async () => {
     const events: AgentEvent[] = [];
     await todoWriteTool.handler(
       { todos: [{ content: 'x', status: 'in_progress' }] },
@@ -47,6 +50,7 @@ describe('TodoWrite', () => {
     );
     const todoEvent = events.find((e) => e.type === 'todos');
     expect(todoEvent && todoEvent.type === 'todos' && todoEvent.depth).toBe(2);
+    expect(todoEvent).toMatchObject({ agentId: 'agent-2', parentAgentId: 'root' });
   });
 
   it('allows a fully completed list', async () => {

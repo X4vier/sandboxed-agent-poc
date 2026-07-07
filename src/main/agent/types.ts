@@ -24,6 +24,10 @@ export interface ToolContext {
   attachBlocks(blocks: ContentBlockParam[]): void;
   /** Nesting depth of the current agent (0 = root, >0 = a spawned subagent). */
   depth: number;
+  /** Stable identity of the current agent (`root`, or the spawning Task tool_use id). */
+  agentId: string;
+  /** Parent agent identity, or null for the root agent. */
+  parentAgentId: string | null;
   /**
    * Launch a subagent that shares this workspace, tool set, token budget, and
    * cancellation signal but gets its own fresh context window. Resolves to the

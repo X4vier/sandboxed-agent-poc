@@ -83,6 +83,8 @@ describe('Task subagent', () => {
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
       depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
       budget: new TokenBudget(),
     });
 
@@ -90,23 +92,39 @@ describe('Task subagent', () => {
     expect(vfs.readText('out.txt')).toEqual({ ok: true, text: 'hi' });
     expect(result).toContain('Subagent finished');
 
-    // Subagent activity is tagged with depth 1; the root Task call is depth 0.
+    // Subagent activity is routed by the Task tool_use id; depth remains display metadata.
     const taskCall = events.find((e) => e.type === 'tool_call' && e.name === 'Task');
-    expect(taskCall && taskCall.type === 'tool_call' && taskCall.depth).toBe(0);
+    expect(taskCall).toMatchObject({
+      type: 'tool_call',
+      id: 'r1',
+      agentId: 'root',
+      parentAgentId: null,
+      depth: 0,
+    });
     const subWrite = events.find((e) => e.type === 'tool_call' && e.name === 'Write');
-    expect(subWrite && subWrite.type === 'tool_call' && subWrite.depth).toBe(1);
+    expect(subWrite).toMatchObject({
+      type: 'tool_call',
+      id: 's1',
+      agentId: 'r1',
+      parentAgentId: 'root',
+      depth: 1,
+    });
 
     // The subagent's report flows back to the root as the Task tool_result.
     const taskResult = events.find((e) => e.type === 'tool_result' && e.name === 'Task');
     expect(taskResult && taskResult.type === 'tool_result' && taskResult.result).toContain(
       'Created out.txt',
     );
+    expect(taskResult).toMatchObject({ agentId: 'root', parentAgentId: null, depth: 0 });
 
     // Exactly one root-level 'done' event (subagents don't emit done).
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
 
     // All four turns billed to the shared budget: 4 × (10 in + 5 out).
-    expect(events.filter((e) => e.type === 'turn_complete')).toHaveLength(4);
+    const turnAgents = events
+      .filter((e) => e.type === 'turn_complete')
+      .map((e) => e.agentId);
+    expect(turnAgents).toEqual(['root', 'r1', 'r1', 'root']);
   });
 
   it('refuses to spawn past the maximum nesting depth', async () => {
@@ -120,6 +138,8 @@ describe('Task subagent', () => {
         signal: new AbortController().signal,
         attachBlocks: () => {},
         depth: MAX_SUBAGENT_DEPTH,
+        agentId: 'root',
+        parentAgentId: null,
         runSubagent: async () => {
           spawned = true;
           return 'should not run';
@@ -141,6 +161,8 @@ describe('Task subagent', () => {
           signal: new AbortController().signal,
           attachBlocks: () => {},
           depth: 0,
+          agentId: 'root',
+          parentAgentId: null,
           runSubagent: async () => 'should not run',
         },
       ),

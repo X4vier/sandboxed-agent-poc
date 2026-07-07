@@ -105,6 +105,8 @@ describe('read_document tool', () => {
       signal: new AbortController().signal,
       attachBlocks: (blocks) => attached.push(...blocks),
       depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
       runSubagent: async () => '',
     };
   }

@@ -99,7 +99,13 @@ export const todoWriteTool: AgentTool = {
   },
   handler: async (input, ctx) => {
     const todos = parseTodos(input);
-    ctx.emit({ type: 'todos', todos, depth: ctx.depth });
+    ctx.emit({
+      type: 'todos',
+      todos,
+      depth: ctx.depth,
+      agentId: ctx.agentId,
+      parentAgentId: ctx.parentAgentId,
+    });
     return render(todos);
   },
 };

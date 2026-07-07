@@ -78,14 +78,22 @@ describe('runAgent loop', () => {
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
       depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
       budget,
     });
 
     expect(result).toContain('Done');
     expect(vfs.readText('out.txt')).toEqual({ ok: true, text: 'hi' });
-    expect(events.some((e) => e.type === 'tool_call')).toBe(true);
-    expect(events.some((e) => e.type === 'tool_result')).toBe(true);
-    expect(events.some((e) => e.type === 'done')).toBe(true);
+    const toolCall = events.find((e) => e.type === 'tool_call');
+    expect(toolCall).toMatchObject({ type: 'tool_call', agentId: 'root', parentAgentId: null });
+    const toolResult = events.find((e) => e.type === 'tool_result');
+    expect(toolResult).toMatchObject({ type: 'tool_result', agentId: 'root', parentAgentId: null });
+    expect(events.find((e) => e.type === 'done')).toMatchObject({
+      type: 'done',
+      agentId: 'root',
+      parentAgentId: null,
+    });
     // two turns × (10 in + 5 out)
     expect(budget.used).toBe(30);
   });
@@ -106,6 +114,8 @@ describe('runAgent loop', () => {
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
       depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
       budget: new TokenBudget(),
     });
 
@@ -137,12 +147,15 @@ describe('runAgent loop', () => {
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
       depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
       budget: new TokenBudget(),
     });
 
     expect(result).toContain('All done');
     const compaction = events.find((e) => e.type === 'compaction');
     expect(compaction && compaction.type === 'compaction' && compaction.contextTokens).toBe(90);
+    expect(compaction).toMatchObject({ agentId: 'root', parentAgentId: null, depth: 0 });
     expect((streamParams[1] as { tool_choice?: { type: string } }).tool_choice).toEqual({
       type: 'none',
     });
@@ -162,6 +175,8 @@ describe('runAgent loop', () => {
         emit: (e) => events.push(e),
         signal: ac.signal,
         depth: 0,
+        agentId: 'root',
+        parentAgentId: null,
         budget: new TokenBudget(),
       }),
     ).rejects.toThrow();

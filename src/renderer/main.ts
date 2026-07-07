@@ -220,57 +220,49 @@ addBtn.addEventListener('click', async () => {
 });
 
 // ---------- transcript ----------
-// Agent output is nested by depth: root activity (depth 0) flows into the
-// transcript column; a subagent spawned via Task (depth > 0) renders inside the
-// body of its Task row. `depthContainers` maps a depth to the element its events
-// append to; `assistantByDepth` tracks the streaming assistant block per depth.
+// Agent output is routed by stable agent id: root activity flows into the
+// transcript column; a subagent spawned via Task renders inside the body of its
+// Task row. Depth is kept only as display metadata.
+const ROOT_AGENT_ID = 'root';
 const toolRows = new Map<string, HTMLDetailsElement>();
-const depthContainers = new Map<number, HTMLElement>();
-const assistantByDepth = new Map<number, { el: HTMLElement; raw: string }>();
-const nestedTodos = new Map<number, HTMLElement>();
+const agentContainers = new Map<string, HTMLElement>();
+const assistantByAgent = new Map<string, { el: HTMLElement; raw: string }>();
+const nestedTodos = new Map<string, HTMLElement>();
 
-function toolKey(depth: number, id: string): string {
-  return `${depth}:${id}`;
+function toolKey(agentId: string, id: string): string {
+  return `${agentId}:${id}`;
 }
 
 function scrollTranscript(): void {
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
-function containerFor(depth: number): HTMLElement {
-  return depthContainers.get(depth) ?? transcriptEl;
-}
-
-function clearNestedRouting(fromDepth: number): void {
-  for (const depth of [...depthContainers.keys()]) {
-    if (depth >= fromDepth) depthContainers.delete(depth);
-  }
-  for (const depth of [...assistantByDepth.keys()]) {
-    if (depth >= fromDepth) assistantByDepth.delete(depth);
-  }
-  for (const depth of [...nestedTodos.keys()]) {
-    if (depth >= fromDepth) nestedTodos.delete(depth);
-  }
+function containerFor(agentId: string, parentAgentId: string | null): HTMLElement {
+  return (
+    agentContainers.get(agentId) ??
+    (parentAgentId ? agentContainers.get(parentAgentId) : null) ??
+    transcriptEl
+  );
 }
 
 function clearTranscript(): void {
   transcriptEl.replaceChildren();
   toolRows.clear();
-  assistantByDepth.clear();
+  assistantByAgent.clear();
   nestedTodos.clear();
-  depthContainers.clear();
-  depthContainers.set(0, transcriptEl);
+  agentContainers.clear();
+  agentContainers.set(ROOT_AGENT_ID, transcriptEl);
   rootTodosEl.hidden = true;
   rootTodosEl.replaceChildren();
 }
 
-function appendAssistantText(text: string, depth: number): void {
-  let cur = assistantByDepth.get(depth);
+function appendAssistantText(text: string, agentId: string, parentAgentId: string | null): void {
+  let cur = assistantByAgent.get(agentId);
   if (!cur) {
     const node = el('div', 'msg assistant markdown');
-    containerFor(depth).append(node);
+    containerFor(agentId, parentAgentId).append(node);
     cur = { el: node, raw: '' };
-    assistantByDepth.set(depth, cur);
+    assistantByAgent.set(agentId, cur);
   }
   // Markdown needs the full block context, so we keep the raw text and re-render
   // the whole message on each streaming delta.
@@ -279,32 +271,37 @@ function appendAssistantText(text: string, depth: number): void {
   scrollTranscript();
 }
 
-function addToolCall(id: string, name: string, input: unknown, depth: number): void {
-  assistantByDepth.delete(depth); // next assistant text starts a fresh block
+function addToolCall(
+  id: string,
+  name: string,
+  input: unknown,
+  agentId: string,
+  parentAgentId: string | null,
+): void {
+  assistantByAgent.delete(agentId); // next assistant text starts a fresh block
   const details = el('details', 'tool') as HTMLDetailsElement;
   const summary = el('summary');
   summary.append(el('span', 'tool-name', name), el('span', 'tool-summary', summarizeInput(input)));
   const inputPre = el('pre', undefined, JSON.stringify(input, null, 2));
   details.append(summary, inputPre);
-  toolRows.set(toolKey(depth, id), details);
-  containerFor(depth).append(details);
+  toolRows.set(toolKey(agentId, id), details);
+  containerFor(agentId, parentAgentId).append(details);
 
   if (name === 'Task') {
     // Route the spawned subagent's activity into this row's nested body.
-    clearNestedRouting(depth + 1);
     details.open = true;
     details.classList.add('task');
     const body = el('div', 'subagent');
     details.append(body);
-    depthContainers.set(depth + 1, body);
-    assistantByDepth.delete(depth + 1);
-    nestedTodos.delete(depth + 1);
+    agentContainers.set(id, body);
+    assistantByAgent.delete(id);
+    nestedTodos.delete(id);
   }
   scrollTranscript();
 }
 
-function addToolResult(id: string, result: string, isError: boolean, depth: number): void {
-  const details = toolRows.get(toolKey(depth, id));
+function addToolResult(id: string, result: string, isError: boolean, agentId: string): void {
+  const details = toolRows.get(toolKey(agentId, id));
   if (!details) return;
   if (isError) details.dataset['error'] = 'true';
   details.append(el('pre', undefined, result));
@@ -326,26 +323,30 @@ function renderTodoList(todos: TodoItem[]): HTMLElement {
   return box;
 }
 
-function updateTodos(todos: TodoItem[], depth: number): void {
-  if (depth === 0) {
+function updateTodos(todos: TodoItem[], agentId: string, parentAgentId: string | null): void {
+  if (agentId === ROOT_AGENT_ID) {
     rootTodosEl.hidden = todos.length === 0;
     rootTodosEl.replaceChildren(renderTodoList(todos));
     return;
   }
-  let panel = nestedTodos.get(depth);
+  let panel = nestedTodos.get(agentId);
   if (!panel) {
     panel = el('div', 'todos nested');
-    containerFor(depth).append(panel);
-    nestedTodos.set(depth, panel);
+    containerFor(agentId, parentAgentId).append(panel);
+    nestedTodos.set(agentId, panel);
   }
   panel.hidden = todos.length === 0;
   panel.replaceChildren(renderTodoList(todos));
   scrollTranscript();
 }
 
-function addBanner(message: string): void {
-  assistantByDepth.delete(0);
-  transcriptEl.append(el('div', 'banner', message));
+function addBanner(
+  message: string,
+  agentId = ROOT_AGENT_ID,
+  parentAgentId: string | null = null,
+): void {
+  assistantByAgent.delete(agentId);
+  containerFor(agentId, parentAgentId).append(el('div', 'banner', message));
   scrollTranscript();
 }
 
@@ -447,27 +448,29 @@ saveAllBtn.addEventListener('click', async () => {
 agent.onAgentEvent((event: AgentEvent) => {
   switch (event.type) {
     case 'assistant_text_delta':
-      appendAssistantText(event.text, event.depth);
+      appendAssistantText(event.text, event.agentId, event.parentAgentId);
       break;
     case 'tool_call':
-      addToolCall(event.id, event.name, event.input, event.depth);
+      addToolCall(event.id, event.name, event.input, event.agentId, event.parentAgentId);
       break;
     case 'tool_result':
-      addToolResult(event.id, event.result, event.isError, event.depth);
+      addToolResult(event.id, event.result, event.isError, event.agentId);
       break;
     case 'todos':
-      updateTodos(event.todos, event.depth);
+      updateTodos(event.todos, event.agentId, event.parentAgentId);
       break;
     case 'compaction':
       addBanner(
         `Context compacted (was ~${event.contextTokens.toLocaleString()} tokens) — summarizing history to keep going.`,
+        event.agentId,
+        event.parentAgentId,
       );
       break;
     case 'turn_complete':
       setTokens(event.usage);
       break;
     case 'error':
-      addBanner(event.message);
+      addBanner(event.message, event.agentId, event.parentAgentId);
       break;
     case 'done':
       setTokens(event.usage);

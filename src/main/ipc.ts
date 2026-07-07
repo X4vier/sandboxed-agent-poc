@@ -121,6 +121,8 @@ export function registerIpc(window: BrowserWindow): void {
         emit,
         signal: controller.signal,
         depth: 0,
+        agentId: 'root',
+        parentAgentId: null,
         budget,
       });
     } catch {
