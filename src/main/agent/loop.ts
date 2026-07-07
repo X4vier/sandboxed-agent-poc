@@ -11,11 +11,13 @@ import { normalizeWorkspacePath } from '../workspace/normalizePath';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 import { ToolRegistry } from '../tools/registry';
 import type { AgentTool, ToolContext, TokenBudget } from './types';
-import { AGENT_MODEL, getClient } from './client';
+import { AGENT_MODEL, getClient, getEffort } from './client';
 import { buildSystemPrompt } from './systemPrompt';
 
 const MAX_ITERATIONS = 30;
-const MAX_TOKENS_PER_TURN = 8192;
+// Streaming, so HTTP timeouts aren't a concern; leave headroom for adaptive
+// thinking (on by default on Sonnet 5) plus the response.
+const MAX_TOKENS_PER_TURN = 16000;
 
 export interface AgentRunOptions {
   task: string;
@@ -47,6 +49,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
   const registry = new ToolRegistry(tools);
   const apiTools = registry.toApiTools() as unknown as Tool[];
   const system = buildSystemPrompt(tools);
+  const effort = getEffort();
   const client: Anthropic = getClient();
 
   const ctx: ToolContext = { vfs, normalizePath: normalizeWorkspacePath, emit, signal };
@@ -62,7 +65,14 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       }
 
       const stream = client.messages.stream(
-        { model: AGENT_MODEL, max_tokens: MAX_TOKENS_PER_TURN, system, messages, tools: apiTools },
+        {
+          model: AGENT_MODEL,
+          max_tokens: MAX_TOKENS_PER_TURN,
+          system,
+          messages,
+          tools: apiTools,
+          output_config: { effort },
+        },
         { signal },
       );
       stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta }));

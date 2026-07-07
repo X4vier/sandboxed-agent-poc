@@ -39,6 +39,7 @@ const fakeClient = {
 vi.mock('../src/main/agent/client', () => ({
   AGENT_MODEL: 'test-model',
   getClient: () => fakeClient,
+  getEffort: () => 'low',
 }));
 
 const { runAgent } = await import('../src/main/agent/loop');

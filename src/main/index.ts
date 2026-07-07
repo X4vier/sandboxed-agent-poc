@@ -3,6 +3,15 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { registerIpc } from './ipc';
 
+// Load .env from the working directory into process.env. electron-vite does not
+// inject unprefixed vars (ANTHROPIC_API_KEY, AGENT_MODEL, …) into the main
+// process, so we load them explicitly. No-op if there is no .env (packaged app).
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env present — rely on the ambient environment.
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function createWindow(): void {
