@@ -1,0 +1,29 @@
+{
+  "name": "sandboxed-agent-poc",
+  "version": "0.1.0",
+  "description": "Electron PoC: a sandboxed Claude-powered agent operating on an in-memory virtual workspace.",
+  "type": "module",
+  "main": "out/main/index.js",
+  "author": "Affinda",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
+    "quickjs-emscripten": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "^43.0.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^6.0.0",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.0"
+  }
+}
