@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { registerIpc } from './ipc';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -11,7 +12,7 @@ function createWindow(): void {
     show: false,
     title: 'Sandboxed Agent PoC',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.cjs'),
       // Security-critical: keep the renderer fully sandboxed.
       contextIsolation: true,
       sandbox: true,
@@ -20,6 +21,8 @@ function createWindow(): void {
   });
 
   win.once('ready-to-show', () => win.show());
+
+  registerIpc(win);
 
   // Never allow the renderer to open arbitrary windows or navigate away.
   win.webContents.setWindowOpenHandler(({ url }) => {

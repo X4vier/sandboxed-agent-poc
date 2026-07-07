@@ -15,6 +15,9 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        // A sandboxed preload must be CommonJS — Electron cannot load an ESM
+        // preload when sandbox: true.
+        output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
     },
   },
