@@ -49,7 +49,7 @@ class PendingMessageQueue {
   }
 }
 
-export interface AgentSessionOptions {
+export interface AgentOptions {
   /** The in-memory workspace this conversation operates on (persists across turns). */
   vfs: VirtualWorkspace;
   /** The tool set handed to every run of this conversation. */
@@ -89,14 +89,14 @@ function userMessage(text: string): MessageParam {
  * Exactly one run is active at a time (`activeRun`); the loop's compaction and
  * subagent behavior are untouched.
  */
-export class AgentSession {
+export class Agent {
   private messages: MessageParam[] = [];
   private contextTokens = 0;
   private readonly steeringQueue = new PendingMessageQueue('one-at-a-time');
   private readonly followUpQueue = new PendingMessageQueue('all');
   private activeRun: { abort: AbortController; done: Promise<void> } | undefined = undefined;
 
-  constructor(private readonly opts: AgentSessionOptions) {}
+  constructor(private readonly opts: AgentOptions) {}
 
   /** True while a run is in flight. */
   isRunning(): boolean {

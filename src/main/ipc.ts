@@ -12,7 +12,7 @@ import { auditLedgerSnapshot, recordExportWrite } from './audit';
 import { loadSeedCorpus } from './workspace/seedCorpus';
 import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
-import { AgentSession } from './agent/AgentSession';
+import { Agent } from './agent/agent';
 import { TokenBudget } from './agent/types';
 import { AGENT_MODEL, hasApiKey, setApiKey, clearApiKey, getEnvApiKey } from './agent/client';
 import { debugLogStatus, logEvent, logLine, stopDebugLog } from './debugLog';
@@ -24,11 +24,11 @@ interface AppState {
   vfs: VirtualWorkspace | null;
   /**
    * The live multi-turn conversation, or null before the first task / after reset.
-   * The session owns the transcript, context-window fill, token budget, and run
+   * The agent owns the transcript, context-window fill, token budget, and run
    * lifecycle; the workspace it operates on is mirrored into `vfs` for the audit
    * and export handlers.
    */
-  session: AgentSession | null;
+  agent: Agent | null;
 }
 
 /** The files that will actually populate the VFS, honouring the seed toggle. */
@@ -49,7 +49,7 @@ export function registerIpc(window: BrowserWindow): void {
     staged: loadSeedCorpus(),
     seedIncluded: true,
     vfs: null,
-    session: null,
+    agent: null,
   };
 
   const emit = (event: AgentEvent): void => {
@@ -148,13 +148,13 @@ export function registerIpc(window: BrowserWindow): void {
     const trimmed = requireString(task, 'task').trim();
     if (trimmed.length === 0) throw new Error('Task must not be empty.');
     if (!hasApiKey()) throw new Error('No Anthropic API key set. Enter your key to run a task.');
-    if (state.session?.isRunning()) throw new Error('A task is already running.');
+    if (state.agent?.isRunning()) throw new Error('A task is already running.');
 
     // A live session continues the same conversation and workspace (the agent's
     // created/modified files persist); starting fresh builds a new in-memory
     // workspace from the staged files. The staged-file set is only sampled when
     // starting fresh; mid-conversation staging changes are ignored until New chat.
-    if (!state.session) {
+    if (!state.agent) {
       // Build a fresh in-memory workspace from the staged files (read-only reads).
       // The default corpus is included only when the seed toggle is on.
       const vfs = new VirtualWorkspace();
@@ -163,39 +163,39 @@ export function registerIpc(window: BrowserWindow): void {
         vfs.stageProvided(file.name, content);
       }
       state.vfs = vfs;
-      state.session = new AgentSession({ vfs, tools: buildTools(), budget: new TokenBudget(), emit });
+      state.agent = new Agent({ vfs, tools: buildTools(), budget: new TokenBudget(), emit });
       logLine('run_start', JSON.stringify({ task: trimmed, model: AGENT_MODEL, fileCount: vfs.fileCount }));
     } else {
       logLine('run_continue', JSON.stringify({ task: trimmed, fileCount: state.vfs?.fileCount ?? 0 }));
     }
 
-    state.session.prompt(trimmed);
+    state.agent.prompt(trimmed);
     // Resolve only once the conversation has come fully to rest, so the renderer's
     // await marks the run finished at the right moment (steering keeps it pending).
-    await state.session.waitUntilIdle();
+    await state.agent.waitUntilIdle();
     logLine('run_end', JSON.stringify({ status: 'completed' }));
   });
 
   ipcMain.handle('agent:steer', (_e, message: unknown): void => {
     const trimmed = requireString(message, 'message').trim();
     if (trimmed.length === 0) throw new Error('Message must not be empty.');
-    if (!state.session) throw new Error('No active conversation to steer.');
+    if (!state.agent) throw new Error('No active conversation to steer.');
     // Injected into the in-flight run at its next turn boundary. Returns at once;
     // the originating startTask await stays pending until the run settles.
-    state.session.steer(trimmed);
+    state.agent.steer(trimmed);
   });
 
   ipcMain.handle('agent:cancelTask', (): void => {
-    state.session?.stop();
+    state.agent?.stop();
   });
 
   ipcMain.handle('agent:resetConversation', (): void => {
-    if (state.session?.isRunning()) {
+    if (state.agent?.isRunning()) {
       throw new Error('Cannot start a new conversation while a task is running.');
     }
     // Drop the conversation and workspace; the next startTask rebuilds both from
     // the current staged files.
-    state.session = null;
+    state.agent = null;
     state.vfs = null;
   });
 

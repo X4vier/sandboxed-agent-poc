@@ -45,13 +45,13 @@ vi.mock('../src/main/agent/client', () => ({
   getCompactionThreshold: () => 0.8,
 }));
 
-const { AgentSession } = await import('../src/main/agent/AgentSession');
+const { Agent } = await import('../src/main/agent/agent');
 const { buildTools } = await import('../src/main/tools/index');
 const { VirtualWorkspace } = await import('../src/main/workspace/VirtualWorkspace');
 const { TokenBudget } = await import('../src/main/agent/types');
 
-function makeSession(events: AgentEvent[] = []) {
-  return new AgentSession({
+function makeAgent(events: AgentEvent[] = []) {
+  return new Agent({
     vfs: new VirtualWorkspace(),
     tools: buildTools(),
     budget: new TokenBudget(),
@@ -74,21 +74,21 @@ beforeEach(() => {
   streamParams.length = 0;
 });
 
-describe('AgentSession', () => {
+describe('Agent', () => {
   it('runs a prompt when idle and resumes the same conversation on the next prompt', async () => {
     queue.push({ text: 'First answer.', stopReason: 'end_turn' });
     queue.push({ text: 'Second answer.', stopReason: 'end_turn' });
 
-    const session = makeSession();
-    expect(session.isRunning()).toBe(false);
+    const agent = makeAgent();
+    expect(agent.isRunning()).toBe(false);
 
-    session.prompt('first question');
-    expect(session.isRunning()).toBe(true); // active synchronously
-    await session.waitUntilIdle();
-    expect(session.isRunning()).toBe(false);
+    agent.prompt('first question');
+    expect(agent.isRunning()).toBe(true); // active synchronously
+    await agent.waitUntilIdle();
+    expect(agent.isRunning()).toBe(false);
 
-    session.prompt('second question');
-    await session.waitUntilIdle();
+    agent.prompt('second question');
+    await agent.waitUntilIdle();
 
     // The second run resumed from the first: prior user+assistant turns, then the
     // new question — three messages, not a fresh one-message conversation.
@@ -103,11 +103,11 @@ describe('AgentSession', () => {
     queue.push({ text: 'Working…', stopReason: 'end_turn' });
     queue.push({ text: 'Did the steer too.', stopReason: 'end_turn' });
 
-    const session = makeSession();
-    session.prompt('start work');
+    const agent = makeAgent();
+    agent.prompt('start work');
     // Queued while the run is active; picked up at the stop boundary of the SAME run.
-    session.steer('also handle Y');
-    await session.waitUntilIdle();
+    agent.steer('also handle Y');
+    await agent.waitUntilIdle();
 
     // No new conversation was started — both turns belong to one run, and the
     // second request carried the steering message as a user turn.
@@ -121,10 +121,10 @@ describe('AgentSession', () => {
     queue.push({ text: 'First run done.', stopReason: 'end_turn' });
     queue.push({ text: 'Follow-up run done.', stopReason: 'end_turn' });
 
-    const session = makeSession();
-    session.prompt('first task');
-    session.prompt('follow-up task'); // busy → follow-up queue → next run after this one
-    await session.waitUntilIdle();
+    const agent = makeAgent();
+    agent.prompt('first task');
+    agent.prompt('follow-up task'); // busy → follow-up queue → next run after this one
+    await agent.waitUntilIdle();
 
     // Two distinct runs; the follow-up resumed from the first run's history.
     expect(streamParams).toHaveLength(2);
@@ -143,13 +143,13 @@ describe('AgentSession', () => {
     queue.push({ text: 'should not run', stopReason: 'end_turn' });
 
     const events: AgentEvent[] = [];
-    const session = makeSession(events);
-    session.prompt('do work');
-    session.prompt('queued follow-up');
-    session.stop();
-    await session.waitUntilIdle();
+    const agent = makeAgent(events);
+    agent.prompt('do work');
+    agent.prompt('queued follow-up');
+    agent.stop();
+    await agent.waitUntilIdle();
 
-    expect(session.isRunning()).toBe(false);
+    expect(agent.isRunning()).toBe(false);
     // Only the first run's single request went out; the cleared follow-up never ran.
     expect(streamParams).toHaveLength(1);
     expect(queue).toHaveLength(1);
