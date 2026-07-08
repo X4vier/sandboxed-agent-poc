@@ -20,7 +20,7 @@ const argVal = (flag, def) => (args.includes(flag) ? args[args.indexOf(flag) + 1
 const limit = Number(argVal('--limit', ARTICLES.length));
 const outDir = argVal('--out', join(root, 'seed-data'));
 const concurrency = Number(argVal('--concurrency', 8));
-const target = Number(argVal('--target', 100)); // total files wanted (split 50/50)
+const target = Number(argVal('--target', 200)); // total files wanted (split 50/50)
 const tmpDir = join(root, 'node_modules', '.cache', 'seed-tmp');
 
 const slug = (title) => title.toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
