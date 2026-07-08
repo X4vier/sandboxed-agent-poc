@@ -17,6 +17,18 @@ const runBtn = byId<HTMLButtonElement>('run');
 const cancelBtn = byId<HTMLButtonElement>('cancel');
 const newChatBtn = byId<HTMLButtonElement>('new-chat');
 
+// A prefilled demo task phrased as a natural request for a specific outcome.
+// It can't be answered without each country's land borders, so the agent has to
+// read all ~190 staged documents (forcing fan-out to Task subagents) and then
+// run a graph traversal in the QuickJS sandbox to find the answer.
+const DEFAULT_TASK = `I've staged a big set of country profiles in this workspace — one document per country. Here's the puzzle I want solved, using only what the documents actually say:
+
+If I start in one country and travel purely overland — only ever crossing shared land borders, never taking a flight or a boat — what's the largest number of different countries I could visit on a single continuous trip?
+
+Give me the maximum count, the set of countries in that run, and which starting country (or countries) reaches it. Ground every border on the wording in the documents rather than your own memory, and once you have the answer, sanity-check a couple of the border claims by quoting the source text.`;
+
+taskInput.value = DEFAULT_TASK;
+
 let running = false;
 let conversationActive = false;
 
