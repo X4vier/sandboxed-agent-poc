@@ -9,7 +9,8 @@ import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
 import { runAgent } from './agent/loop';
 import { TokenBudget } from './agent/types';
-import { hasApiKey, setApiKey, clearApiKey } from './agent/client';
+import { AGENT_MODEL, hasApiKey, setApiKey, clearApiKey } from './agent/client';
+import { debugLogStatus, logEvent, logLine, stopDebugLog } from './debugLog';
 
 interface AppState {
   staged: StagedFileInfo[];
@@ -43,6 +44,7 @@ export function registerIpc(window: BrowserWindow): void {
   };
 
   const emit = (event: AgentEvent): void => {
+    logEvent(event);
     if (!window.isDestroyed()) window.webContents.send('agent:event', event);
   };
 
@@ -94,6 +96,10 @@ export function registerIpc(window: BrowserWindow): void {
     return state.seedIncluded;
   });
 
+  ipcMain.handle('agent:debugLogStatus', () => debugLogStatus());
+
+  ipcMain.handle('agent:stopDebugLog', () => stopDebugLog());
+
   ipcMain.handle('agent:startTask', async (_e, task: unknown): Promise<void> => {
     const trimmed = requireString(task, 'task').trim();
     if (trimmed.length === 0) throw new Error('Task must not be empty.');
@@ -111,6 +117,7 @@ export function registerIpc(window: BrowserWindow): void {
     state.vfs = vfs;
     state.controller = controller;
     state.running = true;
+    logLine('run_start', JSON.stringify({ task: trimmed, model: AGENT_MODEL, fileCount: vfs.fileCount }));
 
     const budget = new TokenBudget();
     try {
@@ -125,7 +132,9 @@ export function registerIpc(window: BrowserWindow): void {
         parentAgentId: null,
         budget,
       });
-    } catch {
+      logLine('run_end', JSON.stringify({ status: 'completed' }));
+    } catch (e) {
+      logLine('run_error', JSON.stringify({ message: (e as Error).message ?? String(e) }));
       // runAgent already emitted an 'error' event for the renderer; swallow so
       // the IPC promise settles cleanly.
     } finally {

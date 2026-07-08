@@ -10,6 +10,8 @@ const bridge: AgentBridge = {
   listStagedFiles: () => ipcRenderer.invoke('agent:listStagedFiles'),
   isSeedIncluded: () => ipcRenderer.invoke('agent:isSeedIncluded'),
   setSeedIncluded: (included) => ipcRenderer.invoke('agent:setSeedIncluded', included),
+  debugLogStatus: () => ipcRenderer.invoke('agent:debugLogStatus'),
+  stopDebugLog: () => ipcRenderer.invoke('agent:stopDebugLog'),
   startTask: (task) => ipcRenderer.invoke('agent:startTask', task),
   cancelTask: () => ipcRenderer.invoke('agent:cancelTask'),
   onAgentEvent: (cb: (event: AgentEvent) => void) => {

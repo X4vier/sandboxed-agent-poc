@@ -69,6 +69,13 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface DebugLogStatus {
+  /** Whether AGENT_DEBUG_LOG is active and has not been stopped this session. */
+  active: boolean;
+  /** Current or most recent run log filename, once a task has started. */
+  fileName: string | null;
+}
+
 /** The complete contextBridge surface exposed to the renderer. */
 export interface AgentBridge {
   /** Whether an ephemeral API key is currently set in the main process. */
@@ -84,6 +91,10 @@ export interface AgentBridge {
   isSeedIncluded(): Promise<boolean>;
   /** Include or exclude the whole default corpus; returns the new state. */
   setSeedIncluded(included: boolean): Promise<boolean>;
+  /** Whether opt-in debug logging is active for this session. */
+  debugLogStatus(): Promise<DebugLogStatus>;
+  /** Disable opt-in debug logging for the rest of the session. */
+  stopDebugLog(): Promise<DebugLogStatus>;
   startTask(task: string): Promise<void>;
   cancelTask(): Promise<void>;
   onAgentEvent(cb: (event: AgentEvent) => void): () => void;

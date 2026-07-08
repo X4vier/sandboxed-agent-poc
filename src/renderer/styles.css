@@ -98,6 +98,35 @@ header.topbar {
   align-items: center;
   gap: 0.8rem;
 }
+.debug-log {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 420px;
+  border: 1px solid rgba(224, 108, 117, 0.7);
+  border-radius: 999px;
+  background: rgba(224, 108, 117, 0.12);
+  color: #ffb3ba;
+  padding: 0.2rem 0.25rem 0.2rem 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+.debug-log[hidden] {
+  display: none;
+}
+.debug-log span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.debug-log button {
+  border-color: rgba(224, 108, 117, 0.5);
+  background: rgba(224, 108, 117, 0.18);
+  color: #ffd3d7;
+  border-radius: 999px;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.72rem;
+}
 .tokens {
   font-family: var(--mono);
   font-size: 0.78rem;
@@ -332,6 +361,23 @@ textarea#task:focus {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0.05rem 0.3rem;
+}
+.msg.markdown table {
+  margin: 0 0 0.6rem;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.msg.markdown th,
+.msg.markdown td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.6rem;
+  text-align: left;
+}
+.msg.markdown th {
+  background: var(--panel-2);
 }
 .msg.markdown pre {
   margin: 0 0 0.6rem;

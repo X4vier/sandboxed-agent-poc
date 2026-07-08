@@ -40,6 +40,21 @@ npm run typecheck  # strict tsc, no emit
 npm test           # vitest (validator, workspace, tools, QuickJS, loop)
 ```
 
+## Debugging
+
+Set `AGENT_DEBUG_LOG` to a directory path before launching the app to write an
+opt-in JSONL debug log for each task run:
+
+```bash
+AGENT_DEBUG_LOG=/tmp/agent-debug npm run dev
+```
+
+This deliberately breaches the normal no-disk-residue guarantee. It logs agent
+events, tool inputs, truncated tool results, and run start/end metadata to disk,
+so do **not** use it with sensitive documents. When active, the app shows a
+red debug-log badge with a **Stop logging** button that disables logging for the
+rest of the session.
+
 ### Package a portable Windows .exe
 
 ```bash

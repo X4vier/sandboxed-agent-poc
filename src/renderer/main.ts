@@ -1,4 +1,4 @@
-import type { AgentEvent, StagedFileInfo, TodoItem, WorkspaceFileInfo } from '../shared/ipc';
+import type { AgentEvent, DebugLogStatus, StagedFileInfo, TodoItem, WorkspaceFileInfo } from '../shared/ipc';
 import { renderMarkdown } from './markdown';
 
 const agent = window.agent;
@@ -38,6 +38,10 @@ document.getElementById('app')!.innerHTML = `
       <h1>In-memory agent workspace</h1>
     </div>
     <div class="topbar-right">
+      <div class="debug-log" id="debug-log" hidden>
+        <span id="debug-log-label"></span>
+        <button id="debug-log-stop" title="Stop debug logging">Stop logging</button>
+      </div>
       <div class="tokens" id="tokens">tokens: —</div>
       <button id="change-key" class="ghost" title="Change API key">🔑 Change key</button>
     </div>
@@ -121,10 +125,15 @@ const gateForm = $<HTMLFormElement>('gate-form');
 const gateError = $('gate-error');
 const apiKeyInput = $<HTMLInputElement>('api-key');
 const changeKeyBtn = $<HTMLButtonElement>('change-key');
+const debugLogEl = $('debug-log');
+const debugLogLabel = $('debug-log-label');
+const debugLogStopBtn = $<HTMLButtonElement>('debug-log-stop');
 
 let running = false;
 let seedIncluded = true;
 let selectedPath: string | null = null;
+let debugLogActive = false;
+let debugLogFileName: string | null = null;
 
 // ---------- toast ----------
 let toastTimer: number | undefined;
@@ -134,6 +143,28 @@ function showToast(message: string, isError = false): void {
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => (toast.className = 'toast'), 3500);
 }
+
+// ---------- debug log ----------
+function renderDebugLogStatus(status: DebugLogStatus): void {
+  debugLogActive = status.active;
+  debugLogFileName = status.fileName;
+  debugLogEl.hidden = !status.active;
+  debugLogLabel.textContent = status.fileName
+    ? `● Debug log: ${status.fileName}`
+    : '● Debug log: enabled';
+}
+
+async function refreshDebugLogStatus(): Promise<void> {
+  renderDebugLogStatus(await agent.debugLogStatus());
+}
+
+debugLogStopBtn.addEventListener('click', async () => {
+  try {
+    renderDebugLogStatus(await agent.stopDebugLog());
+  } catch (e) {
+    showToast((e as Error).message, true);
+  }
+});
 
 // ---------- staging ----------
 /** One removable file row (used for both user files and default-corpus files). */
@@ -372,12 +403,14 @@ runBtn.addEventListener('click', async () => {
   }
   clearTranscript();
   setRunning(true);
+  await refreshDebugLogStatus();
   try {
     await agent.startTask(task);
   } catch (e) {
     addBanner((e as Error).message);
   } finally {
     setRunning(false);
+    await refreshDebugLogStatus();
     await refreshWorkspace();
   }
 });
@@ -446,6 +479,7 @@ saveAllBtn.addEventListener('click', async () => {
 
 // ---------- event stream ----------
 agent.onAgentEvent((event: AgentEvent) => {
+  if (debugLogActive && debugLogFileName === null) void refreshDebugLogStatus();
   switch (event.type) {
     case 'assistant_text_delta':
       appendAssistantText(event.text, event.agentId, event.parentAgentId);
@@ -517,4 +551,5 @@ async function checkApiKey(): Promise<void> {
 
 // ---------- init ----------
 void checkApiKey();
+void refreshDebugLogStatus();
 void refreshStaged();
