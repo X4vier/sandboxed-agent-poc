@@ -305,6 +305,16 @@ textarea#task:focus {
 .msg.assistant {
   color: var(--text);
 }
+.msg.user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+  color: var(--text);
+}
 
 /* ---------- rendered markdown ---------- */
 .msg.markdown {

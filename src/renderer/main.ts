@@ -56,6 +56,7 @@ document.getElementById('app')!.innerHTML = `
         <div class="task-buttons">
           <button id="run" class="primary">Run</button>
           <button id="cancel" class="danger" disabled>Cancel</button>
+          <button id="new-chat" hidden>New chat</button>
         </div>
       </div>
     </section>
@@ -113,6 +114,7 @@ const tokensEl = $('tokens');
 const addBtn = $<HTMLButtonElement>('add');
 const runBtn = $<HTMLButtonElement>('run');
 const cancelBtn = $<HTMLButtonElement>('cancel');
+const newChatBtn = $<HTMLButtonElement>('new-chat');
 const saveAllBtn = $<HTMLButtonElement>('save-all');
 const saveFileBtn = $<HTMLButtonElement>('save-file');
 const taskInput = $<HTMLTextAreaElement>('task');
@@ -130,6 +132,10 @@ const debugLogLabel = $('debug-log-label');
 const debugLogStopBtn = $<HTMLButtonElement>('debug-log-stop');
 
 let running = false;
+// Whether a conversation is live (a task has completed and can take follow-ups).
+// Mirrors the main-process `conversation` state; set on the root `done` event,
+// cleared on New chat.
+let conversationActive = false;
 let seedIncluded = true;
 let selectedPath: string | null = null;
 let debugLogActive = false;
@@ -414,6 +420,19 @@ function appendAssistantText(text: string, agentId: string, parentAgentId: strin
   scrollTranscript();
 }
 
+// The user's own message, shown in the transcript so a multi-turn conversation
+// reads as a dialogue. Starts a fresh root turn: the next assistant delta opens
+// a new block rather than appending to the previous answer.
+function appendUserMessage(text: string): void {
+  removeAgentThinking(ROOT_AGENT_ID);
+  assistantByAgent.delete(ROOT_AGENT_ID);
+  const node = el('div', 'msg user');
+  node.textContent = text;
+  transcriptEl.append(node);
+  transcriptPinned = true;
+  forceScrollTranscript();
+}
+
 // Create (or fetch) the row for a tool call. Called both when a tool_use block
 // first opens (input not yet known) and — as a fallback — when the full call
 // arrives; the row is built once and reused.
@@ -590,17 +609,30 @@ function setRunning(next: boolean): void {
   runBtn.disabled = next;
   cancelBtn.disabled = !next;
   addBtn.disabled = next;
-  taskInput.disabled = next;
+  newChatBtn.disabled = next;
   void refreshStaged();
+}
+
+// Reflect whether we're starting a conversation or continuing one in the
+// composer's affordances (button label, placeholder, New chat visibility).
+function updateComposerMode(): void {
+  runBtn.textContent = conversationActive ? 'Send' : 'Run';
+  taskInput.placeholder = conversationActive
+    ? 'Send a follow-up message…'
+    : 'Describe the task for the agent…';
+  newChatBtn.hidden = !conversationActive;
 }
 
 runBtn.addEventListener('click', async () => {
   const task = taskInput.value.trim();
   if (task.length === 0) {
-    showToast('Enter a task first.', true);
+    showToast(conversationActive ? 'Enter a message first.' : 'Enter a task first.', true);
     return;
   }
-  clearTranscript();
+  // Fresh conversation clears the board; a follow-up keeps the history on screen.
+  if (!conversationActive) clearTranscript();
+  appendUserMessage(task);
+  taskInput.value = '';
   setRunning(true);
   await refreshDebugLogStatus();
   try {
@@ -616,6 +648,24 @@ runBtn.addEventListener('click', async () => {
 
 cancelBtn.addEventListener('click', () => {
   void agent.cancelTask();
+});
+
+newChatBtn.addEventListener('click', async () => {
+  if (running) return;
+  try {
+    await agent.resetConversation();
+  } catch (e) {
+    showToast((e as Error).message, true);
+    return;
+  }
+  conversationActive = false;
+  clearTranscript();
+  transcriptEl.append(el('div', 'idle-hint', 'Stage files, describe a task, and press Run.'));
+  updateComposerMode();
+  selectedPath = null;
+  viewer.hidden = true;
+  await refreshWorkspace();
+  taskInput.focus();
 });
 
 // ---------- workspace / results ----------
@@ -715,6 +765,12 @@ agent.onAgentEvent((event: AgentEvent) => {
     case 'done':
       removeAgentThinking(event.agentId);
       setTokens(event.usage);
+      // The root run completed cleanly and its history is now persisted — the
+      // conversation can take follow-up messages.
+      if (event.agentId === ROOT_AGENT_ID) {
+        conversationActive = true;
+        updateComposerMode();
+      }
       void refreshWorkspace();
       break;
   }

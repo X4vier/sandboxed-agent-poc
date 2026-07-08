@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import type { AgentEvent, StagedFileInfo, WorkspaceFileInfo } from '../shared/ipc';
 import { VirtualWorkspace, MAX_FILE_BYTES } from './workspace/VirtualWorkspace';
 import { loadSeedCorpus } from './workspace/seedCorpus';
@@ -12,6 +13,18 @@ import { TokenBudget } from './agent/types';
 import { AGENT_MODEL, hasApiKey, setApiKey, clearApiKey, getEnvApiKey } from './agent/client';
 import { debugLogStatus, logEvent, logLine, stopDebugLog } from './debugLog';
 
+/**
+ * The persisted root conversation, kept alive between `startTask` calls so the
+ * user can send follow-up messages. Holds the full message history, the
+ * context-window fill (for the compaction check on resume), and a budget that
+ * accumulates token usage across the whole conversation.
+ */
+interface Conversation {
+  messages: MessageParam[];
+  contextTokens: number;
+  budget: TokenBudget;
+}
+
 interface AppState {
   staged: StagedFileInfo[];
   /** Whether the bundled default corpus (origin 'seed') is part of the workspace. */
@@ -19,6 +32,8 @@ interface AppState {
   vfs: VirtualWorkspace | null;
   controller: AbortController | null;
   running: boolean;
+  /** The active multi-turn conversation, or null before the first task / after reset. */
+  conversation: Conversation | null;
 }
 
 /** The files that will actually populate the VFS, honouring the seed toggle. */
@@ -41,6 +56,7 @@ export function registerIpc(window: BrowserWindow): void {
     vfs: null,
     controller: null,
     running: false,
+    conversation: null,
   };
 
   const emit = (event: AgentEvent): void => {
@@ -109,20 +125,38 @@ export function registerIpc(window: BrowserWindow): void {
     if (!hasApiKey()) throw new Error('No Anthropic API key set. Enter your key to run a task.');
     if (state.running) throw new Error('A task is already running.');
 
-    // Build a fresh in-memory workspace from the staged files (read-only reads).
-    // The default corpus is included only when the seed toggle is on.
-    const vfs = new VirtualWorkspace();
-    for (const file of effectiveStaged(state)) {
-      const content = await readFile(file.path);
-      vfs.stageProvided(file.name, content);
+    // Continue the live conversation when one exists — reusing the same workspace
+    // (so the agent's created/modified files persist) and message history. The
+    // staged-file set is only sampled when starting fresh; mid-conversation
+    // staging changes are intentionally ignored until the next New chat.
+    const resuming = state.conversation !== null && state.vfs !== null;
+    let vfs: VirtualWorkspace;
+    let budget: TokenBudget;
+
+    if (resuming) {
+      vfs = state.vfs as VirtualWorkspace;
+      budget = (state.conversation as Conversation).budget;
+      logLine(
+        'run_continue',
+        JSON.stringify({ task: trimmed, priorMessages: state.conversation!.messages.length, fileCount: vfs.fileCount }),
+      );
+    } else {
+      // Build a fresh in-memory workspace from the staged files (read-only reads).
+      // The default corpus is included only when the seed toggle is on.
+      vfs = new VirtualWorkspace();
+      for (const file of effectiveStaged(state)) {
+        const content = await readFile(file.path);
+        vfs.stageProvided(file.name, content);
+      }
+      budget = new TokenBudget();
+      logLine('run_start', JSON.stringify({ task: trimmed, model: AGENT_MODEL, fileCount: vfs.fileCount }));
     }
+
     const controller = new AbortController();
     state.vfs = vfs;
     state.controller = controller;
     state.running = true;
-    logLine('run_start', JSON.stringify({ task: trimmed, model: AGENT_MODEL, fileCount: vfs.fileCount }));
 
-    const budget = new TokenBudget();
     try {
       await runAgent({
         task: trimmed,
@@ -134,6 +168,16 @@ export function registerIpc(window: BrowserWindow): void {
         agentId: 'root',
         parentAgentId: null,
         budget,
+        ...(resuming
+          ? {
+              priorMessages: state.conversation!.messages,
+              priorContextTokens: state.conversation!.contextTokens,
+            }
+          : {}),
+        // Persist the completed history so the next task continues this conversation.
+        onConversationState: (messages, contextTokens) => {
+          state.conversation = { messages, contextTokens, budget };
+        },
       });
       logLine('run_end', JSON.stringify({ status: 'completed' }));
     } catch (e) {
@@ -148,6 +192,14 @@ export function registerIpc(window: BrowserWindow): void {
 
   ipcMain.handle('agent:cancelTask', (): void => {
     state.controller?.abort();
+  });
+
+  ipcMain.handle('agent:resetConversation', (): void => {
+    if (state.running) throw new Error('Cannot start a new conversation while a task is running.');
+    // Drop the history and workspace; the next startTask rebuilds both from the
+    // current staged files.
+    state.conversation = null;
+    state.vfs = null;
   });
 
   ipcMain.handle('agent:listWorkspaceFiles', (): WorkspaceFileInfo[] => state.vfs?.list() ?? []);

@@ -15,6 +15,7 @@ const bridge: AgentBridge = {
   stopDebugLog: () => ipcRenderer.invoke('agent:stopDebugLog'),
   startTask: (task) => ipcRenderer.invoke('agent:startTask', task),
   cancelTask: () => ipcRenderer.invoke('agent:cancelTask'),
+  resetConversation: () => ipcRenderer.invoke('agent:resetConversation'),
   onAgentEvent: (cb: (event: AgentEvent) => void) => {
     const listener = (_e: unknown, event: AgentEvent): void => cb(event);
     ipcRenderer.on('agent:event', listener);

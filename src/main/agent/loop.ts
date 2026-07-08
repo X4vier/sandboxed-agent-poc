@@ -50,6 +50,20 @@ export interface AgentRunOptions {
   agentId: string;
   parentAgentId: string | null;
   budget: TokenBudget;
+  /**
+   * Prior conversation turns to resume from (root follow-ups). When non-empty,
+   * `task` is appended as a new user turn after this history instead of starting
+   * a fresh conversation. Subagents never pass this.
+   */
+  priorMessages?: MessageParam[];
+  /** Context-window fill carried from the prior turn, seeding the compaction check. */
+  priorContextTokens?: number;
+  /**
+   * Root only: invoked on clean completion with the full message history and the
+   * current context-window fill, so the caller can persist them and continue the
+   * conversation with a follow-up message.
+   */
+  onConversationState?: (messages: MessageParam[], contextTokens: number) => void;
 }
 
 class CancelledError extends Error {
@@ -179,7 +193,20 @@ async function compactHistory(
 }
 
 export async function runAgent(opts: AgentRunOptions): Promise<string> {
-  const { task, tools, vfs, emit, signal, depth, agentId, parentAgentId, budget } = opts;
+  const {
+    task,
+    tools,
+    vfs,
+    emit,
+    signal,
+    depth,
+    agentId,
+    parentAgentId,
+    budget,
+    priorMessages,
+    priorContextTokens,
+    onConversationState,
+  } = opts;
   const isRoot = depth === 0;
   const eventBase = { agentId, parentAgentId, depth };
   const registry = new ToolRegistry(tools);
@@ -245,10 +272,17 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     ...(execution.isError ? { is_error: true } : {}),
   });
 
-  let messages: MessageParam[] = [{ role: 'user', content: task }];
+  // Resume from a prior conversation (root follow-up) by appending the new task
+  // as a fresh user turn; otherwise start clean. Prior history already ends with
+  // an assistant turn, so this keeps the user/assistant alternation valid.
+  let messages: MessageParam[] =
+    priorMessages && priorMessages.length > 0
+      ? [...priorMessages, { role: 'user', content: task }]
+      : [{ role: 'user', content: task }];
   // Tokens the model read on the most recent turn ≈ how full this agent's
-  // context window currently is. Watched for compaction; 0 before the first turn.
-  let contextTokens = 0;
+  // context window currently is. Watched for compaction; carried across
+  // follow-ups, else 0 before the first turn.
+  let contextTokens = priorContextTokens ?? 0;
 
   try {
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
@@ -298,7 +332,12 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
 
       if (final.stop_reason !== 'tool_use') {
         const text = extractText(assistantContent);
-        if (isRoot) emit({ type: 'done', summary: text, usage: budget.snapshot(), ...eventBase });
+        if (isRoot) {
+          // Hand the completed history back so the caller can persist it and let
+          // the user continue this conversation with a follow-up message.
+          onConversationState?.(messages, contextTokens);
+          emit({ type: 'done', summary: text, usage: budget.snapshot(), ...eventBase });
+        }
         return text;
       }
 

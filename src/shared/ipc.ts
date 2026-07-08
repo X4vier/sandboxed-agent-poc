@@ -107,8 +107,15 @@ export interface AgentBridge {
   debugLogStatus(): Promise<DebugLogStatus>;
   /** Disable opt-in debug logging for the rest of the session. */
   stopDebugLog(): Promise<DebugLogStatus>;
+  /**
+   * Run a task. If a conversation is already in progress, `task` is sent as a
+   * follow-up message that continues it (preserving history and the workspace);
+   * otherwise a fresh conversation and workspace are started from the staged files.
+   */
   startTask(task: string): Promise<void>;
   cancelTask(): Promise<void>;
+  /** Discard the current conversation and workspace so the next task starts fresh. */
+  resetConversation(): Promise<void>;
   onAgentEvent(cb: (event: AgentEvent) => void): () => void;
   listWorkspaceFiles(): Promise<WorkspaceFileInfo[]>;
   getWorkspaceFile(path: string): Promise<string>;

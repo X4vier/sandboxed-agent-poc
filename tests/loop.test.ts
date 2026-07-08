@@ -116,6 +116,56 @@ describe('runAgent loop', () => {
     expect(budget.used).toBe(30);
   });
 
+  it('resumes a conversation from prior messages on a follow-up', async () => {
+    // First turn: a plain answer that establishes the conversation.
+    queue.push({ text: 'First answer.', stopReason: 'end_turn', usage: { input_tokens: 40, output_tokens: 5 } });
+
+    const vfs = new VirtualWorkspace();
+    const budget = new TokenBudget();
+    let saved: { messages: unknown[]; contextTokens: number } | null = null;
+    const base = {
+      tools: buildTools(),
+      vfs,
+      emit: () => undefined,
+      signal: new AbortController().signal,
+      depth: 0 as const,
+      agentId: 'root',
+      parentAgentId: null,
+      budget,
+      onConversationState: (messages: unknown[], contextTokens: number) => {
+        saved = { messages, contextTokens };
+      },
+    };
+
+    await runAgent({ ...base, task: 'first question' });
+
+    // The completed history is handed back: user turn + assistant answer.
+    expect(saved).not.toBeNull();
+    expect(saved!.messages).toHaveLength(2);
+    expect(saved!.contextTokens).toBe(40); // input_tokens of the last turn
+
+    // Follow-up: resume from the saved history with a new user message.
+    queue.push({ text: 'Second answer.', stopReason: 'end_turn' });
+    const result = await runAgent({
+      ...base,
+      task: 'follow-up question',
+      priorMessages: saved!.messages as never,
+      priorContextTokens: saved!.contextTokens,
+    });
+
+    expect(result).toBe('Second answer.');
+    // The follow-up request carried the prior turns plus the new user message.
+    const followUp = paramsAt(1);
+    expect(followUp.messages).toHaveLength(3);
+    expect(followUp.messages[0]?.content).toBe('first question');
+    expect(followUp.messages[1]?.role).toBe('assistant');
+    const lastContent = followUp.messages[2]?.content as Array<{ type: string; text?: string }>;
+    expect(lastContent[0]).toMatchObject({ type: 'text', text: 'follow-up question' });
+    // History keeps growing across turns, and usage accumulates in one budget.
+    expect(saved!.messages).toHaveLength(4);
+    expect(budget.used).toBe(60); // 40+5 first turn, 10+5 second turn
+  });
+
   it('adds prompt-cache breakpoints without mutating stored history', async () => {
     queue.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'hi' } }],
