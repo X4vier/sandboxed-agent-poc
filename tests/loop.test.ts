@@ -5,7 +5,12 @@ interface ScriptedTurn {
   text?: string;
   toolUses?: Array<{ id: string; name: string; input: unknown }>;
   stopReason: 'end_turn' | 'tool_use';
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  };
 }
 
 const queue: ScriptedTurn[] = [];
@@ -60,6 +65,19 @@ beforeEach(() => {
   contextWindowTokens = 200_000;
 });
 
+function cacheControl(value: unknown): unknown {
+  return (value as { cache_control?: unknown }).cache_control;
+}
+
+function paramsAt(index: number): {
+  system: Array<{ type: string; text: string; cache_control?: unknown }>;
+  messages: Array<{ role: string; content: string | Array<{ type: string; cache_control?: unknown }> }>;
+  tools: Array<{ name: string; cache_control?: unknown }>;
+  tool_choice?: { type: string };
+} {
+  return streamParams[index] as ReturnType<typeof paramsAt>;
+}
+
 describe('runAgent loop', () => {
   it('executes tool calls and returns the final text', async () => {
     queue.push({
@@ -98,6 +116,88 @@ describe('runAgent loop', () => {
     expect(budget.used).toBe(30);
   });
 
+  it('adds prompt-cache breakpoints without mutating stored history', async () => {
+    queue.push({
+      toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'hi' } }],
+      stopReason: 'tool_use',
+    });
+    queue.push({ text: 'Done.', stopReason: 'end_turn' });
+
+    await runAgent({
+      task: 'write hi',
+      tools: buildTools(),
+      vfs: new VirtualWorkspace(),
+      emit: () => undefined,
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget: new TokenBudget(),
+    });
+
+    const first = paramsAt(0);
+    expect(first.system).toEqual([
+      expect.objectContaining({ type: 'text', cache_control: { type: 'ephemeral' } }),
+    ]);
+    expect(first.tools.slice(0, -1).every((tool) => cacheControl(tool) === undefined)).toBe(true);
+    expect(first.tools.at(-1)).toEqual(expect.objectContaining({ cache_control: { type: 'ephemeral' } }));
+    expect(first.messages[0]?.content).toEqual([
+      expect.objectContaining({ type: 'text', text: 'write hi', cache_control: { type: 'ephemeral' } }),
+    ]);
+
+    const second = paramsAt(1);
+    expect(second.messages[0]?.content).toBe('write hi');
+    expect(cacheControl((second.messages[1]?.content as Array<{ type: string }>)[0])).toBeUndefined();
+    const finalMessage = second.messages.at(-1);
+    expect(Array.isArray(finalMessage?.content)).toBe(true);
+    const finalBlocks = finalMessage?.content as Array<{ type: string; cache_control?: unknown }>;
+    expect(finalBlocks.at(-1)).toEqual(expect.objectContaining({ cache_control: { type: 'ephemeral' } }));
+  });
+
+  it('accumulates cache usage fields in TokenBudget snapshots', async () => {
+    queue.push({
+      text: 'Done.',
+      stopReason: 'end_turn',
+      usage: {
+        input_tokens: 100,
+        output_tokens: 7,
+        cache_read_input_tokens: 900,
+        cache_creation_input_tokens: 50,
+      },
+    });
+
+    const budget = new TokenBudget();
+    const events: AgentEvent[] = [];
+    await runAgent({
+      task: 'finish',
+      tools: buildTools(),
+      vfs: new VirtualWorkspace(),
+      emit: (e) => events.push(e),
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget,
+    });
+
+    expect(budget.snapshot()).toEqual({
+      inputTokens: 100,
+      outputTokens: 7,
+      cacheReadInputTokens: 900,
+      cacheCreationInputTokens: 50,
+      totalTokens: 1057,
+    });
+    expect(events.find((e) => e.type === 'turn_complete')).toMatchObject({
+      usage: {
+        inputTokens: 100,
+        cacheReadInputTokens: 900,
+        cacheCreationInputTokens: 50,
+        outputTokens: 7,
+        totalTokens: 1057,
+      },
+    });
+  });
+
   it('turns a throwing tool into an is_error result without crashing', async () => {
     queue.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: '../escape.txt', content: 'x' } }],
@@ -132,7 +232,7 @@ describe('runAgent loop', () => {
     queue.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'a.txt', content: 'x' } }],
       stopReason: 'tool_use',
-      usage: { input_tokens: 90, output_tokens: 5 },
+      usage: { input_tokens: 10, cache_read_input_tokens: 80, output_tokens: 5 },
     });
     // Turn 2 is the summarization pass triggered before the next real turn.
     queue.push({ text: 'SUMMARY: wrote a.txt containing x.', stopReason: 'end_turn' });
@@ -159,6 +259,14 @@ describe('runAgent loop', () => {
     expect((streamParams[1] as { tool_choice?: { type: string } }).tool_choice).toEqual({
       type: 'none',
     });
+    const compactionParams = paramsAt(1);
+    expect(compactionParams.system[0]).toEqual(expect.objectContaining({ cache_control: { type: 'ephemeral' } }));
+    expect(compactionParams.tools.at(-1)).toEqual(expect.objectContaining({ cache_control: { type: 'ephemeral' } }));
+    const compactionLast = compactionParams.messages.at(-1);
+    const compactionBlocks = compactionLast?.content as Array<{ type: string; text?: string; cache_control?: unknown }>;
+    expect(compactionBlocks.at(-1)).toEqual(
+      expect.objectContaining({ text: expect.stringContaining('You are about to run out'), cache_control: { type: 'ephemeral' } }),
+    );
     // Every scripted turn was consumed (tool turn + summary + continuation).
     expect(queue.length).toBe(0);
   });

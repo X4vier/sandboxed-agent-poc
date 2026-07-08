@@ -50,12 +50,12 @@ if [ "$CLEAN" = 1 ]; then
 fi
 
 # Source-only sync. Excluded paths are preserved in the dest, so the isolated
-# node_modules / out survive and installs stay incremental. .env is excluded so
-# no key crosses over — paste your key in the app's key gate (dev holds it in
-# memory only), or copy .env into the isolated dir yourself if you prefer.
+# node_modules / out survive and installs stay incremental. Unlike build:win:wsl,
+# .env IS synced here: this is the dev loop, so your local key/config crosses over
+# and pre-fills the app on the Windows side. (Packaged builds still exclude it.)
 SYNC_EXCLUDES=(
   --exclude '.git' --exclude 'node_modules' --exclude 'out' --exclude 'release'
-  --exclude '.env' --exclude '.env.local' --exclude 'seed-review'
+  --exclude '.env.local' --exclude 'seed-review'
 )
 sync_once() { rsync -a --delete "${SYNC_EXCLUDES[@]}" "$REPO_ROOT/" "$ISO_WSL/"; }
 

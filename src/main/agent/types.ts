@@ -55,20 +55,32 @@ export interface AgentTool<In = unknown> {
 export class TokenBudget {
   inputTokens = 0;
   outputTokens = 0;
+  cacheReadInputTokens = 0;
+  cacheCreationInputTokens = 0;
 
-  add(inputTokens: number, outputTokens: number): void {
+  add(inputTokens: number, outputTokens: number, cacheReadInputTokens = 0, cacheCreationInputTokens = 0): void {
     this.inputTokens += inputTokens;
     this.outputTokens += outputTokens;
+    this.cacheReadInputTokens += cacheReadInputTokens;
+    this.cacheCreationInputTokens += cacheCreationInputTokens;
   }
 
   get used(): number {
-    return this.inputTokens + this.outputTokens;
+    return this.inputTokens + this.cacheReadInputTokens + this.cacheCreationInputTokens + this.outputTokens;
   }
 
-  snapshot(): { inputTokens: number; outputTokens: number; totalTokens: number } {
+  snapshot(): {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+    totalTokens: number;
+  } {
     return {
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
+      cacheReadInputTokens: this.cacheReadInputTokens,
+      cacheCreationInputTokens: this.cacheCreationInputTokens,
       totalTokens: this.used,
     };
   }
