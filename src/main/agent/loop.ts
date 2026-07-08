@@ -34,6 +34,32 @@ const MAX_ITERATIONS = 100;
 // thinking (on by default on Sonnet 5) plus the response.
 const MAX_TOKENS_PER_TURN = 16000;
 
+/** Context passed to {@link AgentRunOptions.beforeToolCall} / afterToolCall. */
+export interface ToolCallContext {
+  /** The tool_use block the model emitted (id, name, input). */
+  toolUse: ToolUseBlock;
+  /** Nesting depth of the agent making the call (0 = root). */
+  depth: number;
+  /** Identity of the agent making the call. */
+  agentId: string;
+}
+
+/**
+ * Returned from {@link AgentRunOptions.beforeToolCall}. `{ block: true }`
+ * prevents execution; `reason` becomes the (error) tool result shown to the
+ * model. For an external consumer, this hook is the permission system.
+ */
+export interface BeforeToolCallResult {
+  block?: boolean;
+  reason?: string;
+}
+
+/** Returned from {@link AgentRunOptions.afterToolCall} to rewrite a result. */
+export interface AfterToolCallResult {
+  result?: string;
+  isError?: boolean;
+}
+
 export interface AgentRunOptions {
   task: string;
   tools: AgentTool[];
@@ -48,6 +74,18 @@ export interface AgentRunOptions {
   budget: TokenBudget;
   /** Compaction policy; defaults to {@link DEFAULT_COMPACTION_SETTINGS}. */
   compaction?: CompactionSettings;
+  /**
+   * Called after a tool_use is surfaced but before it executes. Return
+   * `{ block: true, reason }` to prevent execution — the loop feeds `reason`
+   * back as an error tool result instead of running the tool. Inherited by
+   * subagents.
+   */
+  beforeToolCall?: (ctx: ToolCallContext) => BeforeToolCallResult | undefined | Promise<BeforeToolCallResult | undefined>;
+  /**
+   * Called after a tool executes, before its result is emitted. Return
+   * `{ result?, isError? }` to rewrite the outcome. Inherited by subagents.
+   */
+  afterToolCall?: (ctx: ToolCallContext & { result: string; isError: boolean }) => AfterToolCallResult | undefined | Promise<AfterToolCallResult | undefined>;
   /**
    * Prior conversation turns to resume from (root follow-ups). When non-empty,
    * `task` is appended as a new user turn after this history instead of starting
@@ -135,6 +173,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     agentId,
     parentAgentId,
     budget,
+    beforeToolCall,
+    afterToolCall,
     priorMessages,
     priorContextTokens,
     onConversationState,
@@ -166,33 +206,51 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input, ...eventBase });
     let result: string;
     let isError = false;
-    const ctx: ToolContext = {
-      ...baseCtx,
-      // Reuse this run's shared vfs/engine/emit/signal/budget; the child gets its
-      // own context window at the next depth and compacts it independently. The
-      // shared budget just accumulates the whole tree's usage for reporting.
-      runSubagent: (subtask) =>
-        runAgent({
-          task: subtask,
-          tools,
-          vfs,
-          engine,
-          emit,
-          signal,
-          depth: depth + 1,
-          agentId: use.id,
-          parentAgentId: agentId,
-          budget,
-          compaction: compactionSettings,
-        }),
-    };
-    try {
-      result = await registry.execute(use.name, use.input, ctx);
-      if (signal.aborted) throw new CancelledError();
-    } catch (e) {
-      if (signal.aborted || e instanceof CancelledError) throw new CancelledError();
-      result = `Error: ${(e as Error).message}`;
+
+    // Permission hook: a blocked call never executes; its reason is returned to
+    // the model as an error tool result rather than crashing the run.
+    const decision = await beforeToolCall?.({ toolUse: use, depth, agentId });
+    if (decision?.block) {
+      result = decision.reason ?? `Tool "${use.name}" was blocked before it ran.`;
       isError = true;
+    } else {
+      const ctx: ToolContext = {
+        ...baseCtx,
+        // Reuse this run's shared vfs/engine/emit/signal/budget; the child gets
+        // its own context window at the next depth and compacts it independently.
+        // The shared budget just accumulates the whole tree's usage for reporting.
+        runSubagent: (subtask) =>
+          runAgent({
+            task: subtask,
+            tools,
+            vfs,
+            engine,
+            emit,
+            signal,
+            depth: depth + 1,
+            agentId: use.id,
+            parentAgentId: agentId,
+            budget,
+            compaction: compactionSettings,
+            // Subagents inherit the parent's permission/rewrite hooks.
+            ...(beforeToolCall ? { beforeToolCall } : {}),
+            ...(afterToolCall ? { afterToolCall } : {}),
+          }),
+      };
+      try {
+        result = await registry.execute(use.name, use.input, ctx);
+        if (signal.aborted) throw new CancelledError();
+      } catch (e) {
+        if (signal.aborted || e instanceof CancelledError) throw new CancelledError();
+        result = `Error: ${(e as Error).message}`;
+        isError = true;
+      }
+      // Rewrite hook: may replace the result text and/or error flag.
+      const override = await afterToolCall?.({ toolUse: use, depth, agentId, result, isError });
+      if (override) {
+        if (override.result !== undefined) result = override.result;
+        if (override.isError !== undefined) isError = override.isError;
+      }
     }
     emit({ type: 'tool_result', id: use.id, name: use.name, result, isError, ...eventBase });
     return { use, result, isError };

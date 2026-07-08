@@ -394,6 +394,70 @@ describe('runAgent loop', () => {
     expect(toolTurn.some((b) => b.type === 'text' && b.text === 'while you work, note Z')).toBe(true);
   });
 
+  it('blocks a tool call via beforeToolCall and returns the reason as an error result', async () => {
+    engine.push({
+      toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'hi' } }],
+      stopReason: 'tool_use',
+    });
+    engine.push({ text: 'Understood — I will not write.', stopReason: 'end_turn' });
+
+    const vfs = new VirtualWorkspace();
+    const events: AgentEvent[] = [];
+    await runAgent({
+      task: 'try to write',
+      tools: buildTools(),
+      engine,
+      vfs,
+      emit: (e) => events.push(e),
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget: new TokenBudget(),
+      beforeToolCall: (c) =>
+        c.toolUse.name === 'Write' ? { block: true, reason: 'Writes are not allowed here.' } : undefined,
+    });
+
+    // The blocked write never touched the workspace…
+    expect(vfs.fileCount).toBe(0);
+    // …and the reason came back as an error tool result, not a crash.
+    const toolResult = events.find((e) => e.type === 'tool_result');
+    expect(toolResult && toolResult.type === 'tool_result' && toolResult.isError).toBe(true);
+    expect(toolResult && toolResult.type === 'tool_result' && toolResult.result).toBe(
+      'Writes are not allowed here.',
+    );
+  });
+
+  it('rewrites a tool result via afterToolCall', async () => {
+    engine.push({
+      toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'secret' } }],
+      stopReason: 'tool_use',
+    });
+    engine.push({ text: 'done', stopReason: 'end_turn' });
+
+    const vfs = new VirtualWorkspace();
+    const events: AgentEvent[] = [];
+    await runAgent({
+      task: 'write then redact the confirmation',
+      tools: buildTools(),
+      engine,
+      vfs,
+      emit: (e) => events.push(e),
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget: new TokenBudget(),
+      afterToolCall: (c) => (c.toolUse.name === 'Write' ? { result: 'REDACTED' } : undefined),
+    });
+
+    // afterToolCall runs post-execution, so the write still happened…
+    expect(vfs.readText('out.txt')).toEqual({ ok: true, text: 'secret' });
+    // …but the result surfaced to the model was rewritten.
+    const toolResult = events.find((e) => e.type === 'tool_result');
+    expect(toolResult && toolResult.type === 'tool_result' && toolResult.result).toBe('REDACTED');
+  });
+
   it('aborts before an API call when the signal is already aborted', async () => {
     const ac = new AbortController();
     ac.abort();
