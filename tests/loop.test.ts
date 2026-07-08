@@ -166,6 +166,54 @@ describe('runAgent loop', () => {
     expect(budget.used).toBe(60); // 40+5 first turn, 10+5 second turn
   });
 
+  it('leads the opening turn with a manifest of staged files', async () => {
+    queue.push({ text: 'Done.', stopReason: 'end_turn' });
+
+    const vfs = new VirtualWorkspace();
+    vfs.stageProvided('kenya.pdf', Buffer.from('x'.repeat(2048)));
+    vfs.stageProvided('austria.docx', Buffer.from('y'));
+
+    await runAgent({
+      task: 'how many files are there?',
+      tools: buildTools(),
+      vfs,
+      emit: () => undefined,
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget: new TokenBudget(),
+    });
+
+    const opening = paramsAt(0).messages[0]?.content as Array<{ type: string; text: string }>;
+    expect(opening).toHaveLength(2);
+    expect(opening[0].text).toContain('2 files already staged');
+    expect(opening[0].text).toContain('austria.docx (provided, 1 B)');
+    expect(opening[0].text).toContain('kenya.pdf (provided, 2.0 KB)');
+    // The user's task stays as its own trailing block (the cache breakpoint).
+    expect(opening[1].text).toBe('how many files are there?');
+  });
+
+  it('does not add a manifest when the workspace is empty', async () => {
+    queue.push({ text: 'Done.', stopReason: 'end_turn' });
+
+    await runAgent({
+      task: 'just answer',
+      tools: buildTools(),
+      vfs: new VirtualWorkspace(),
+      emit: () => undefined,
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget: new TokenBudget(),
+    });
+
+    const opening = paramsAt(0).messages[0]?.content as Array<{ type: string; text: string }>;
+    expect(opening).toHaveLength(1);
+    expect(opening[0].text).toBe('just answer');
+  });
+
   it('adds prompt-cache breakpoints without mutating stored history', async () => {
     queue.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'hi' } }],

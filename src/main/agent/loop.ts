@@ -120,6 +120,31 @@ function cachedMessages(messages: MessageParam[]): MessageParam[] {
   ];
 }
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * A snapshot of everything staged in the workspace, prepended to the root
+ * agent's opening turn so it always starts knowing what's available (and how
+ * many files there are) without having to call list_files first. Returns null
+ * when the workspace is empty — there's no list to lead with.
+ */
+function buildFileManifest(vfs: VirtualWorkspace): string | null {
+  const files = vfs.list();
+  if (files.length === 0) return null;
+  const lines = files.map((f) => `  - ${f.path} (${f.status}, ${formatBytes(f.size)})`);
+  return [
+    `Your workspace has ${files.length} file${files.length === 1 ? '' : 's'} already staged and ready. ` +
+      'All paths are workspace-relative; open any of them with Read, read_document, or Grep, ' +
+      'and refresh this list anytime with list_files.',
+    '',
+    ...lines,
+  ].join('\n');
+}
+
 function inputUsage(usage: Usage): number {
   return (
     usage.input_tokens +
@@ -275,10 +300,25 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
   // Resume from a prior conversation (root follow-up) by appending the new task
   // as a fresh user turn; otherwise start clean. Prior history already ends with
   // an assistant turn, so this keeps the user/assistant alternation valid.
+  //
+  // On a fresh root conversation, lead with a manifest of the staged workspace
+  // so the agent always begins knowing what files exist. Follow-ups already have
+  // it earlier in history; subagents get scoped tasks instead of the full list.
+  const isFreshRoot = isRoot && !(priorMessages && priorMessages.length > 0);
+  const manifest = isFreshRoot ? buildFileManifest(vfs) : null;
+  const openingTurn: MessageParam = manifest
+    ? {
+        role: 'user',
+        content: [
+          { type: 'text', text: manifest },
+          { type: 'text', text: task },
+        ],
+      }
+    : { role: 'user', content: task };
   let messages: MessageParam[] =
     priorMessages && priorMessages.length > 0
-      ? [...priorMessages, { role: 'user', content: task }]
-      : [{ role: 'user', content: task }];
+      ? [...priorMessages, openingTurn]
+      : [openingTurn];
   // Tokens the model read on the most recent turn ≈ how full this agent's
   // context window currently is. Watched for compaction; carried across
   // follow-ups, else 0 before the first turn.
