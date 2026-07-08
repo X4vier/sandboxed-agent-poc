@@ -1,90 +1,36 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { AgentEvent } from '../src/shared/ipc';
+import type { EngineRequest } from '../src/main/agent/engine';
+import { runAgent } from '../src/main/agent/loop';
+import { buildTools } from '../src/main/tools/index';
+import { VirtualWorkspace } from '../src/main/workspace/VirtualWorkspace';
+import { TokenBudget } from '../src/main/agent/types';
+import { createFakeEngine, type FakeEngine } from './fakeEngine';
 
-interface ScriptedTurn {
-  text?: string;
-  toolUses?: Array<{ id: string; name: string; input: unknown }>;
-  stopReason: 'end_turn' | 'tool_use';
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number | null;
-    cache_creation_input_tokens?: number | null;
-  };
-}
-
-const queue: ScriptedTurn[] = [];
-const streamParams: unknown[] = [];
-// Mutable so a test can shrink the window to force a compaction pass.
-let contextWindowTokens = 200_000;
-
-const fakeClient = {
-  messages: {
-    stream(params: unknown, _opts: unknown) {
-      streamParams.push(params);
-      const turn = queue.shift();
-      if (!turn) throw new Error('no scripted turn');
-      return {
-        on(event: string, cb: (delta: string) => void) {
-          if (event === 'text' && turn.text) cb(turn.text);
-          return this;
-        },
-        async finalMessage() {
-          const content: unknown[] = [];
-          if (turn.text) content.push({ type: 'text', text: turn.text, citations: null });
-          for (const tu of turn.toolUses ?? []) {
-            content.push({ type: 'tool_use', id: tu.id, name: tu.name, input: tu.input });
-          }
-          return {
-            content,
-            stop_reason: turn.stopReason,
-            usage: turn.usage ?? { input_tokens: 10, output_tokens: 5 },
-          };
-        },
-      };
-    },
-  },
-};
-
-vi.mock('../src/main/agent/client', () => ({
-  AGENT_MODEL: 'test-model',
-  getClient: () => fakeClient,
-  getEffort: () => 'low',
-  getContextWindow: () => contextWindowTokens,
-  getCompactionThreshold: () => 0.8,
-}));
-
-const { runAgent } = await import('../src/main/agent/loop');
-const { buildTools } = await import('../src/main/tools/index');
-const { VirtualWorkspace } = await import('../src/main/workspace/VirtualWorkspace');
-const { TokenBudget } = await import('../src/main/agent/types');
+// The loop now consumes an injected CompletionEngine, so the tests drive it with
+// the scripted fake engine (tests/fakeEngine.ts) instead of a mocked SDK client.
+let engine: FakeEngine;
 
 beforeEach(() => {
-  queue.length = 0;
-  streamParams.length = 0;
-  contextWindowTokens = 200_000;
+  engine = createFakeEngine();
 });
 
 function cacheControl(value: unknown): unknown {
   return (value as { cache_control?: unknown }).cache_control;
 }
 
-function paramsAt(index: number): {
-  system: Array<{ type: string; text: string; cache_control?: unknown }>;
-  messages: Array<{ role: string; content: string | Array<{ type: string; cache_control?: unknown }> }>;
-  tools: Array<{ name: string; cache_control?: unknown }>;
-  tool_choice?: { type: string };
-} {
-  return streamParams[index] as ReturnType<typeof paramsAt>;
+/** The request the loop streamed through the engine for the given turn. */
+function paramsAt(index: number): EngineRequest {
+  return engine.requests[index];
 }
 
 describe('runAgent loop', () => {
   it('executes tool calls and returns the final text', async () => {
-    queue.push({
+    engine.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'hi' } }],
       stopReason: 'tool_use',
     });
-    queue.push({ text: 'Done. Created out.txt.', stopReason: 'end_turn' });
+    engine.push({ text: 'Done. Created out.txt.', stopReason: 'end_turn' });
 
     const vfs = new VirtualWorkspace();
     const events: AgentEvent[] = [];
@@ -92,6 +38,7 @@ describe('runAgent loop', () => {
     const result = await runAgent({
       task: 'write hi to out.txt',
       tools: buildTools(),
+      engine,
       vfs,
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
@@ -118,13 +65,14 @@ describe('runAgent loop', () => {
 
   it('resumes a conversation from prior messages on a follow-up', async () => {
     // First turn: a plain answer that establishes the conversation.
-    queue.push({ text: 'First answer.', stopReason: 'end_turn', usage: { input_tokens: 40, output_tokens: 5 } });
+    engine.push({ text: 'First answer.', stopReason: 'end_turn', usage: { input_tokens: 40, output_tokens: 5 } });
 
     const vfs = new VirtualWorkspace();
     const budget = new TokenBudget();
     let saved: { messages: unknown[]; contextTokens: number } | null = null;
     const base = {
       tools: buildTools(),
+      engine,
       vfs,
       emit: () => undefined,
       signal: new AbortController().signal,
@@ -145,7 +93,7 @@ describe('runAgent loop', () => {
     expect(saved!.contextTokens).toBe(40); // input_tokens of the last turn
 
     // Follow-up: resume from the saved history with a new user message.
-    queue.push({ text: 'Second answer.', stopReason: 'end_turn' });
+    engine.push({ text: 'Second answer.', stopReason: 'end_turn' });
     const result = await runAgent({
       ...base,
       task: 'follow-up question',
@@ -167,7 +115,7 @@ describe('runAgent loop', () => {
   });
 
   it('leads the opening turn with a manifest of staged files', async () => {
-    queue.push({ text: 'Done.', stopReason: 'end_turn' });
+    engine.push({ text: 'Done.', stopReason: 'end_turn' });
 
     const vfs = new VirtualWorkspace();
     vfs.stageProvided('kenya.pdf', Buffer.from('x'.repeat(2048)));
@@ -176,6 +124,7 @@ describe('runAgent loop', () => {
     await runAgent({
       task: 'how many files are there?',
       tools: buildTools(),
+      engine,
       vfs,
       emit: () => undefined,
       signal: new AbortController().signal,
@@ -195,11 +144,12 @@ describe('runAgent loop', () => {
   });
 
   it('does not add a manifest when the workspace is empty', async () => {
-    queue.push({ text: 'Done.', stopReason: 'end_turn' });
+    engine.push({ text: 'Done.', stopReason: 'end_turn' });
 
     await runAgent({
       task: 'just answer',
       tools: buildTools(),
+      engine,
       vfs: new VirtualWorkspace(),
       emit: () => undefined,
       signal: new AbortController().signal,
@@ -215,15 +165,16 @@ describe('runAgent loop', () => {
   });
 
   it('adds prompt-cache breakpoints without mutating stored history', async () => {
-    queue.push({
+    engine.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'out.txt', content: 'hi' } }],
       stopReason: 'tool_use',
     });
-    queue.push({ text: 'Done.', stopReason: 'end_turn' });
+    engine.push({ text: 'Done.', stopReason: 'end_turn' });
 
     await runAgent({
       task: 'write hi',
       tools: buildTools(),
+      engine,
       vfs: new VirtualWorkspace(),
       emit: () => undefined,
       signal: new AbortController().signal,
@@ -253,7 +204,7 @@ describe('runAgent loop', () => {
   });
 
   it('accumulates cache usage fields in TokenBudget snapshots', async () => {
-    queue.push({
+    engine.push({
       text: 'Done.',
       stopReason: 'end_turn',
       usage: {
@@ -269,6 +220,7 @@ describe('runAgent loop', () => {
     await runAgent({
       task: 'finish',
       tools: buildTools(),
+      engine,
       vfs: new VirtualWorkspace(),
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
@@ -297,17 +249,18 @@ describe('runAgent loop', () => {
   });
 
   it('turns a throwing tool into an is_error result without crashing', async () => {
-    queue.push({
+    engine.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: '../escape.txt', content: 'x' } }],
       stopReason: 'tool_use',
     });
-    queue.push({ text: 'The write was rejected.', stopReason: 'end_turn' });
+    engine.push({ text: 'The write was rejected.', stopReason: 'end_turn' });
 
     const vfs = new VirtualWorkspace();
     const events: AgentEvent[] = [];
     const result = await runAgent({
       task: 'try to escape',
       tools: buildTools(),
+      engine,
       vfs,
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
@@ -325,22 +278,23 @@ describe('runAgent loop', () => {
 
   it('compacts history instead of overflowing when the window fills, then continues', async () => {
     // Window of 100 → compaction threshold 80 tokens.
-    contextWindowTokens = 100;
+    engine.contextWindow = 100;
     // Turn 1: does a tool call and reports a high context occupancy (> threshold).
-    queue.push({
+    engine.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'a.txt', content: 'x' } }],
       stopReason: 'tool_use',
       usage: { input_tokens: 10, cache_read_input_tokens: 80, output_tokens: 5 },
     });
     // Turn 2 is the summarization pass triggered before the next real turn.
-    queue.push({ text: 'SUMMARY: wrote a.txt containing x.', stopReason: 'end_turn' });
+    engine.push({ text: 'SUMMARY: wrote a.txt containing x.', stopReason: 'end_turn' });
     // Turn 3: the real continuation, now on a small compacted context.
-    queue.push({ text: 'All done.', stopReason: 'end_turn' });
+    engine.push({ text: 'All done.', stopReason: 'end_turn' });
 
     const events: AgentEvent[] = [];
     const result = await runAgent({
       task: 'do the thing',
       tools: buildTools(),
+      engine,
       vfs: new VirtualWorkspace(),
       emit: (e) => events.push(e),
       signal: new AbortController().signal,
@@ -354,9 +308,8 @@ describe('runAgent loop', () => {
     const compaction = events.find((e) => e.type === 'compaction');
     expect(compaction && compaction.type === 'compaction' && compaction.contextTokens).toBe(90);
     expect(compaction).toMatchObject({ agentId: 'root', parentAgentId: null, depth: 0 });
-    expect((streamParams[1] as { tool_choice?: { type: string } }).tool_choice).toEqual({
-      type: 'none',
-    });
+    // The summarization pass forbids tool calls.
+    expect(paramsAt(1).toolChoice).toBe('none');
     const compactionParams = paramsAt(1);
     expect(compactionParams.system[0]).toEqual(expect.objectContaining({ cache_control: { type: 'ephemeral' } }));
     expect(compactionParams.tools.at(-1)).toEqual(expect.objectContaining({ cache_control: { type: 'ephemeral' } }));
@@ -366,14 +319,14 @@ describe('runAgent loop', () => {
       expect.objectContaining({ text: expect.stringContaining('You are about to run out'), cache_control: { type: 'ephemeral' } }),
     );
     // Every scripted turn was consumed (tool turn + summary + continuation).
-    expect(queue.length).toBe(0);
+    expect(engine.requests).toHaveLength(3);
   });
 
   it('injects a steering message at the stop boundary and keeps going', async () => {
     // Turn 1 wants to stop, but a steering message is queued, so the loop must
     // append it as a fresh user turn and run a second turn instead of finishing.
-    queue.push({ text: 'First pass done.', stopReason: 'end_turn' });
-    queue.push({ text: 'Now really done.', stopReason: 'end_turn' });
+    engine.push({ text: 'First pass done.', stopReason: 'end_turn' });
+    engine.push({ text: 'Now really done.', stopReason: 'end_turn' });
 
     const pending: Array<{ role: 'user'; content: string }> = [{ role: 'user', content: 'actually also do Y' }];
     let saved: { messages: unknown[] } | null = null;
@@ -381,6 +334,7 @@ describe('runAgent loop', () => {
     const result = await runAgent({
       task: 'do X',
       tools: buildTools(),
+      engine,
       vfs: new VirtualWorkspace(),
       emit: () => undefined,
       signal: new AbortController().signal,
@@ -410,17 +364,18 @@ describe('runAgent loop', () => {
   });
 
   it('folds a steering message into the tool-result turn', async () => {
-    queue.push({
+    engine.push({
       toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'a.txt', content: 'x' } }],
       stopReason: 'tool_use',
     });
-    queue.push({ text: 'Handled the tools and the steer.', stopReason: 'end_turn' });
+    engine.push({ text: 'Handled the tools and the steer.', stopReason: 'end_turn' });
 
     const pending: Array<{ role: 'user'; content: string }> = [{ role: 'user', content: 'while you work, note Z' }];
 
     await runAgent({
       task: 'write a.txt',
       tools: buildTools(),
+      engine,
       vfs: new VirtualWorkspace(),
       emit: () => undefined,
       signal: new AbortController().signal,
@@ -447,6 +402,7 @@ describe('runAgent loop', () => {
       runAgent({
         task: 'x',
         tools: buildTools(),
+        engine,
         vfs: new VirtualWorkspace(),
         emit: (e) => events.push(e),
         signal: ac.signal,

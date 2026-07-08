@@ -1,6 +1,7 @@
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import type { AgentEvent } from '../../shared/ipc';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
+import type { CompletionEngine } from './engine';
 import { runAgent } from './loop';
 import type { AgentTool, TokenBudget } from './types';
 
@@ -52,6 +53,8 @@ class PendingMessageQueue {
 export interface AgentOptions {
   /** The in-memory workspace this conversation operates on (persists across turns). */
   vfs: VirtualWorkspace;
+  /** The text-completion engine every run of this conversation streams through. */
+  engine: CompletionEngine;
   /** The tool set handed to every run of this conversation. */
   tools: AgentTool[];
   /** Cumulative token usage across the whole conversation (for reporting). */
@@ -179,6 +182,7 @@ export class Agent {
       task,
       tools: this.opts.tools,
       vfs: this.opts.vfs,
+      engine: this.opts.engine,
       emit: this.opts.emit,
       signal,
       depth: 0,

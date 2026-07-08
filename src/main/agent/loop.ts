@@ -1,4 +1,3 @@
-import type Anthropic from '@anthropic-ai/sdk';
 import type {
   CacheControlEphemeral,
   ContentBlockParam,
@@ -14,13 +13,7 @@ import { normalizeWorkspacePath } from '../workspace/normalizePath';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 import { ToolRegistry } from '../tools/registry';
 import type { AgentTool, ToolContext, TokenBudget } from './types';
-import {
-  AGENT_MODEL,
-  getClient,
-  getCompactionThreshold,
-  getContextWindow,
-  getEffort,
-} from './client';
+import type { CompletionEngine, EngineEvent, EngineMessage, EngineRequest } from './engine';
 import { buildSystemPrompt } from './systemPrompt';
 
 const MAX_ITERATIONS = 100;
@@ -29,6 +22,11 @@ const MAX_ITERATIONS = 100;
 const MAX_TOKENS_PER_TURN = 16000;
 // Room for the summary a compaction pass writes before it replaces history.
 const COMPACTION_MAX_TOKENS = 4000;
+// Fraction of the engine's context window at which an agent compacts its
+// history. Task 3 moves this (and the AGENT_COMPACT_THRESHOLD env override) into
+// a CompactionSettings object; kept as a constant here for the engine-injection
+// step so loop.ts no longer imports client.ts.
+const COMPACTION_THRESHOLD = 0.8;
 
 const COMPACTION_INSTRUCTION =
   'You are about to run out of context window. Write a thorough summary of this ' +
@@ -44,6 +42,8 @@ export interface AgentRunOptions {
   task: string;
   tools: AgentTool[];
   vfs: VirtualWorkspace;
+  /** The text-completion engine the loop streams each turn through. */
+  engine: CompletionEngine;
   emit: (event: AgentEvent) => void;
   signal: AbortSignal;
   depth: number;
@@ -170,6 +170,28 @@ function addUsage(budget: TokenBudget, usage: Usage): void {
 }
 
 /**
+ * Consume one engine turn to completion, forwarding streamed text / tool-use
+ * events to `onEvent`, and return the final message. Centralizes the stop/cancel
+ * handling: an aborted turn becomes a CancelledError, a failed turn rethrows its
+ * error message (both land in the loop's outer catch).
+ */
+async function streamTurn(
+  engine: CompletionEngine,
+  req: EngineRequest,
+  onEvent?: (ev: Exclude<EngineEvent, { type: 'message' }>) => void,
+): Promise<EngineMessage> {
+  let final: EngineMessage | undefined;
+  for await (const ev of engine.stream(req)) {
+    if (ev.type === 'message') final = ev.message;
+    else onEvent?.(ev);
+  }
+  if (!final) throw new Error('The engine did not return a final message.');
+  if (final.stopReason === 'aborted' || req.signal.aborted) throw new CancelledError();
+  if (final.errorMessage) throw new Error(final.errorMessage);
+  return final;
+}
+
+/**
  * Summarize the conversation so far into a single fresh user turn, so the agent
  * can keep working with a small context instead of overflowing the window. The
  * summary request reuses the real history (with an instruction appended to the
@@ -179,12 +201,11 @@ function addUsage(budget: TokenBudget, usage: Usage): void {
  * validate.
  */
 async function compactHistory(
-  client: Anthropic,
+  engine: CompletionEngine,
   system: string,
   tools: Tool[],
   messages: MessageParam[],
   task: string,
-  effort: ReturnType<typeof getEffort>,
   budget: TokenBudget,
   signal: AbortSignal,
 ): Promise<MessageParam[]> {
@@ -196,21 +217,16 @@ async function compactHistory(
     { role: last.role, content: [...asBlocks(last.content), { type: 'text', text: COMPACTION_INSTRUCTION }] },
   ];
 
-  const stream = client.messages.stream(
-    {
-      model: AGENT_MODEL,
-      max_tokens: COMPACTION_MAX_TOKENS,
-      system: cachedSystem(system),
-      messages: cachedMessages(requestMessages),
-      tools: cachedTools(tools),
-      tool_choice: { type: 'none' },
-      output_config: { effort },
-    },
-    { signal },
-  );
-  const final = await stream.finalMessage();
+  const final = await streamTurn(engine, {
+    system: cachedSystem(system),
+    messages: cachedMessages(requestMessages),
+    tools: cachedTools(tools),
+    maxTokens: COMPACTION_MAX_TOKENS,
+    signal,
+    toolChoice: 'none',
+  });
   addUsage(budget, final.usage);
-  const summary = extractText(final.content as ContentBlockParam[]).trim();
+  const summary = extractText(final.content).trim();
 
   return [
     {
@@ -229,6 +245,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     task,
     tools,
     vfs,
+    engine,
     emit,
     signal,
     depth,
@@ -245,9 +262,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
   const registry = new ToolRegistry(tools);
   const apiTools = registry.toApiTools() as unknown as Tool[];
   const system = buildSystemPrompt(tools, depth);
-  const effort = getEffort();
-  const client: Anthropic = getClient();
-  const compactAt = getContextWindow() * getCompactionThreshold();
+  const compactAt = engine.contextWindow * COMPACTION_THRESHOLD;
 
   // Media queued by tools during a turn; appended to that turn's user message
   // (after the tool_result blocks) and cleared each iteration.
@@ -278,6 +293,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
           task: subtask,
           tools,
           vfs,
+          engine,
           emit,
           signal,
           depth: depth + 1,
@@ -340,45 +356,35 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       // letting the next request overflow. Never aborts the run.
       if (contextTokens > compactAt) {
         emit({ type: 'compaction', contextTokens, ...eventBase });
-        messages = await compactHistory(client, system, apiTools, messages, task, effort, budget, signal);
+        messages = await compactHistory(engine, system, apiTools, messages, task, budget, signal);
         contextTokens = 0;
       }
 
-      const stream = client.messages.stream(
+      const final = await streamTurn(
+        engine,
         {
-          model: AGENT_MODEL,
-          max_tokens: MAX_TOKENS_PER_TURN,
           system: cachedSystem(system),
           messages: cachedMessages(messages),
           tools: cachedTools(apiTools),
-          output_config: { effort },
+          maxTokens: MAX_TOKENS_PER_TURN,
+          signal,
         },
-        { signal },
+        (ev) => {
+          if (ev.type === 'text') {
+            emit({ type: 'assistant_text_delta', text: ev.text, ...eventBase });
+          } else {
+            emit({ type: 'tool_call_start', id: ev.id, name: ev.name, ...eventBase });
+          }
+        },
       );
-      stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta, ...eventBase }));
-      // Surface each tool_use as soon as its block opens, so the UI can render a
-      // pending row immediately rather than after the whole message (and every
-      // tool input, including large subagent prompts) has finished streaming.
-      stream.on('streamEvent', (event) => {
-        if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
-          emit({
-            type: 'tool_call_start',
-            id: event.content_block.id,
-            name: event.content_block.name,
-            ...eventBase,
-          });
-        }
-      });
-
-      const final = await stream.finalMessage();
       contextTokens = inputUsage(final.usage);
       addUsage(budget, final.usage);
       emit({ type: 'turn_complete', usage: budget.snapshot(), ...eventBase });
 
-      const assistantContent = final.content as ContentBlockParam[];
+      const assistantContent = final.content;
       messages.push({ role: 'assistant', content: assistantContent });
 
-      if (final.stop_reason !== 'tool_use') {
+      if (final.stopReason !== 'tool_use') {
         // The model is ready to stop. Before doing so, pull any user messages the
         // caller has queued (steering): if there are any, append them as a fresh
         // user turn and keep going rather than ending the run. The last message

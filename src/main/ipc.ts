@@ -13,6 +13,7 @@ import { loadSeedCorpus } from './workspace/seedCorpus';
 import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
 import { Agent } from './agent/agent';
+import { createAnthropicEngine } from './agent/anthropicEngine';
 import { TokenBudget } from './agent/types';
 import { AGENT_MODEL, hasApiKey, setApiKey, clearApiKey, getEnvApiKey } from './agent/client';
 import { debugLogStatus, logEvent, logLine, stopDebugLog } from './debugLog';
@@ -163,7 +164,13 @@ export function registerIpc(window: BrowserWindow): void {
         vfs.stageProvided(file.name, content);
       }
       state.vfs = vfs;
-      state.agent = new Agent({ vfs, tools: buildTools(), budget: new TokenBudget(), emit });
+      state.agent = new Agent({
+        vfs,
+        engine: createAnthropicEngine(),
+        tools: buildTools(),
+        budget: new TokenBudget(),
+        emit,
+      });
       logLine('run_start', JSON.stringify({ task: trimmed, model: AGENT_MODEL, fileCount: vfs.fileCount }));
     } else {
       logLine('run_continue', JSON.stringify({ task: trimmed, fileCount: state.vfs?.fileCount ?? 0 }));
