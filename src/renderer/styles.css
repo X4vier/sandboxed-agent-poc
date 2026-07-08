@@ -413,6 +413,9 @@ details.tool {
   border-radius: var(--radius);
   background: var(--panel);
 }
+details.tool[data-status='running'] {
+  border-color: rgba(79, 179, 191, 0.55);
+}
 details.tool[data-error='true'] {
   border-color: var(--error);
 }
@@ -421,16 +424,42 @@ details.tool > summary {
   padding: 0.45rem 0.7rem;
   display: flex;
   gap: 0.5rem;
-  align-items: baseline;
+  align-items: center;
   list-style: none;
+  min-width: 0;
 }
 details.tool > summary::-webkit-details-marker {
   display: none;
+}
+.tool-status {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.tool-status.running,
+.mini-spinner {
+  border: 2px solid rgba(139, 147, 161, 0.35);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+.tool-status.done {
+  color: var(--created);
+}
+.tool-status.failed {
+  color: var(--error);
 }
 .tool-name {
   font-family: var(--mono);
   font-size: 0.8rem;
   color: var(--accent);
+  flex: 0 0 auto;
 }
 .tool-summary {
   font-family: var(--mono);
@@ -440,6 +469,14 @@ details.tool > summary::-webkit-details-marker {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  min-width: 0;
+}
+.tool-meta {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .tool pre {
   margin: 0;
@@ -452,6 +489,30 @@ details.tool > summary::-webkit-details-marker {
   color: var(--muted);
   max-height: 320px;
   overflow: auto;
+}
+.agent-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(33, 37, 44, 0.7);
+}
+.mini-spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 0.8rem;
+  height: 0.8rem;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .idle-hint {
   color: var(--muted);

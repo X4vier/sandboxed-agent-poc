@@ -255,17 +255,46 @@ addBtn.addEventListener('click', async () => {
 // transcript column; a subagent spawned via Task renders inside the body of its
 // Task row. Depth is kept only as display metadata.
 const ROOT_AGENT_ID = 'root';
-const toolRows = new Map<string, HTMLDetailsElement>();
+type ToolStatus = 'running' | 'done' | 'failed';
+interface ToolRowState {
+  details: HTMLDetailsElement;
+  statusEl: HTMLElement;
+  nameEl: HTMLElement;
+  summaryEl: HTMLElement;
+  metaEl: HTMLElement;
+  inputSummary: string;
+  taskLabel: string | null;
+  startedAt: number;
+  isTask: boolean;
+  userToggled: boolean;
+  settingOpen: boolean;
+}
+
+const toolRows = new Map<string, ToolRowState>();
 const agentContainers = new Map<string, HTMLElement>();
 const assistantByAgent = new Map<string, { el: HTMLElement; raw: string }>();
 const nestedTodos = new Map<string, HTMLElement>();
+const thinkingByAgent = new Map<string, HTMLElement>();
+const runningToolsByAgent = new Map<string, number>();
+let transcriptPinned = true;
 
 function toolKey(agentId: string, id: string): string {
   return `${agentId}:${id}`;
 }
 
+function updateTranscriptPinned(): void {
+  const distance = transcriptEl.scrollHeight - transcriptEl.scrollTop - transcriptEl.clientHeight;
+  transcriptPinned = distance < 64;
+}
+
 function scrollTranscript(): void {
+  if (transcriptPinned) transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  updateTranscriptPinned();
+}
+
+function forceScrollTranscript(): void {
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  updateTranscriptPinned();
 }
 
 function containerFor(agentId: string, parentAgentId: string | null): HTMLElement {
@@ -281,13 +310,87 @@ function clearTranscript(): void {
   toolRows.clear();
   assistantByAgent.clear();
   nestedTodos.clear();
+  thinkingByAgent.clear();
+  runningToolsByAgent.clear();
   agentContainers.clear();
   agentContainers.set(ROOT_AGENT_ID, transcriptEl);
   rootTodosEl.hidden = true;
   rootTodosEl.replaceChildren();
+  transcriptPinned = true;
+  forceScrollTranscript();
+}
+
+function taskLabel(input: unknown): string | null {
+  return input &&
+    typeof input === 'object' &&
+    'description' in input &&
+    typeof (input as { description?: unknown }).description === 'string'
+    ? (input as { description: string }).description.trim() || null
+    : null;
+}
+
+function compactText(value: string, max = 140): string {
+  const oneLine = value.replace(/\s+/g, ' ').trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
+}
+
+function durationText(startedAt: number, endedAt = performance.now()): string {
+  const ms = Math.max(0, endedAt - startedAt);
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
+}
+
+function setDetailsOpen(row: ToolRowState, open: boolean): void {
+  row.settingOpen = true;
+  row.details.open = open;
+  window.setTimeout(() => {
+    row.settingOpen = false;
+  }, 50);
+}
+
+function updateToolSummary(row: ToolRowState, status: ToolStatus, result?: string): void {
+  row.details.dataset['status'] = status;
+  row.statusEl.className = `tool-status ${status}`;
+  row.statusEl.textContent = status === 'running' ? '' : status === 'done' ? '✓' : '✗';
+  row.metaEl.textContent = status === 'running' ? 'running' : durationText(row.startedAt);
+  if (!row.isTask) return;
+  const label = row.taskLabel ?? row.inputSummary;
+  row.summaryEl.textContent = result ? `${label} — ${compactText(result)}` : label;
+}
+
+function markAgentToolStarted(agentId: string): void {
+  runningToolsByAgent.set(agentId, (runningToolsByAgent.get(agentId) ?? 0) + 1);
+  removeAgentThinking(agentId);
+}
+
+function markAgentToolFinished(agentId: string, parentAgentId: string | null): void {
+  const next = Math.max(0, (runningToolsByAgent.get(agentId) ?? 1) - 1);
+  if (next === 0) {
+    runningToolsByAgent.delete(agentId);
+    showAgentThinking(agentId, parentAgentId);
+  } else {
+    runningToolsByAgent.set(agentId, next);
+  }
+}
+
+function showAgentThinking(agentId: string, parentAgentId: string | null): void {
+  if (thinkingByAgent.has(agentId)) return;
+  const node = el('div', 'agent-thinking');
+  node.append(el('span', 'mini-spinner'), el('span', undefined, 'Thinking…'));
+  thinkingByAgent.set(agentId, node);
+  containerFor(agentId, parentAgentId).append(node);
+  scrollTranscript();
+}
+
+function removeAgentThinking(agentId: string): void {
+  const node = thinkingByAgent.get(agentId);
+  if (!node) return;
+  node.remove();
+  thinkingByAgent.delete(agentId);
 }
 
 function appendAssistantText(text: string, agentId: string, parentAgentId: string | null): void {
+  removeAgentThinking(agentId);
   let cur = assistantByAgent.get(agentId);
   if (!cur) {
     const node = el('div', 'msg assistant markdown');
@@ -309,33 +412,68 @@ function addToolCall(
   agentId: string,
   parentAgentId: string | null,
 ): void {
+  markAgentToolStarted(agentId);
   assistantByAgent.delete(agentId); // next assistant text starts a fresh block
+  const label = taskLabel(input);
   const details = el('details', 'tool') as HTMLDetailsElement;
   const summary = el('summary');
-  summary.append(el('span', 'tool-name', name), el('span', 'tool-summary', summarizeInput(input)));
+  const statusEl = el('span', 'tool-status running');
+  const nameEl = el('span', 'tool-name', name);
+  const summaryEl = el('span', 'tool-summary', label ?? summarizeInput(input));
+  const metaEl = el('span', 'tool-meta', 'running');
+  summary.append(statusEl, nameEl, summaryEl, metaEl);
   const inputPre = el('pre', undefined, JSON.stringify(input, null, 2));
   details.append(summary, inputPre);
-  toolRows.set(toolKey(agentId, id), details);
+  const row: ToolRowState = {
+    details,
+    statusEl,
+    nameEl,
+    summaryEl,
+    metaEl,
+    inputSummary: summarizeInput(input),
+    taskLabel: label,
+    startedAt: performance.now(),
+    isTask: name === 'Task',
+    userToggled: false,
+    settingOpen: false,
+  };
+  details.addEventListener('toggle', () => {
+    if (!row.settingOpen) row.userToggled = true;
+  });
+  details.dataset['status'] = 'running';
+  toolRows.set(toolKey(agentId, id), row);
   containerFor(agentId, parentAgentId).append(details);
 
   if (name === 'Task') {
     // Route the spawned subagent's activity into this row's nested body.
-    details.open = true;
     details.classList.add('task');
     const body = el('div', 'subagent');
     details.append(body);
     agentContainers.set(id, body);
     assistantByAgent.delete(id);
     nestedTodos.delete(id);
+    setDetailsOpen(row, true);
   }
   scrollTranscript();
 }
 
-function addToolResult(id: string, result: string, isError: boolean, agentId: string): void {
-  const details = toolRows.get(toolKey(agentId, id));
-  if (!details) return;
-  if (isError) details.dataset['error'] = 'true';
-  details.append(el('pre', undefined, result));
+function addToolResult(
+  id: string,
+  result: string,
+  isError: boolean,
+  agentId: string,
+  parentAgentId: string | null,
+): void {
+  const row = toolRows.get(toolKey(agentId, id));
+  if (!row) {
+    markAgentToolFinished(agentId, parentAgentId);
+    return;
+  }
+  if (isError) row.details.dataset['error'] = 'true';
+  updateToolSummary(row, isError ? 'failed' : 'done', result);
+  row.details.append(el('pre', 'tool-result', result));
+  if (row.isTask && !row.userToggled) setDetailsOpen(row, false);
+  markAgentToolFinished(agentId, parentAgentId);
   scrollTranscript();
 }
 
@@ -376,6 +514,7 @@ function addBanner(
   agentId = ROOT_AGENT_ID,
   parentAgentId: string | null = null,
 ): void {
+  removeAgentThinking(agentId);
   assistantByAgent.delete(agentId);
   containerFor(agentId, parentAgentId).append(el('div', 'banner', message));
   scrollTranscript();
@@ -488,7 +627,7 @@ agent.onAgentEvent((event: AgentEvent) => {
       addToolCall(event.id, event.name, event.input, event.agentId, event.parentAgentId);
       break;
     case 'tool_result':
-      addToolResult(event.id, event.result, event.isError, event.agentId);
+      addToolResult(event.id, event.result, event.isError, event.agentId, event.parentAgentId);
       break;
     case 'todos':
       updateTodos(event.todos, event.agentId, event.parentAgentId);
@@ -504,9 +643,11 @@ agent.onAgentEvent((event: AgentEvent) => {
       setTokens(event.usage);
       break;
     case 'error':
+      removeAgentThinking(event.agentId);
       addBanner(event.message, event.agentId, event.parentAgentId);
       break;
     case 'done':
+      removeAgentThinking(event.agentId);
       setTokens(event.usage);
       void refreshWorkspace();
       break;
@@ -550,6 +691,7 @@ async function checkApiKey(): Promise<void> {
 }
 
 // ---------- init ----------
+transcriptEl.addEventListener('scroll', updateTranscriptPinned);
 void checkApiKey();
 void refreshDebugLogStatus();
 void refreshStaged();
