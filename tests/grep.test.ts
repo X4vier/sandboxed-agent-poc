@@ -182,6 +182,39 @@ describe('Grep', () => {
     expect(r).not.toContain('x'.repeat(550));
   });
 
+  it('treats the pattern literally when literal is set', async () => {
+    const ctx = makeCtx();
+    await writeTool.handler({ file_path: 'a.txt', content: 'price is a.b\nprice is axb' }, ctx);
+    // As a regex, "a.b" matches both lines; literal matches only "a.b".
+    const r = await grepTool.handler({ pattern: 'a.b', literal: true }, ctx);
+    expect(r).toContain('a.txt:1: price is a.b');
+    expect(r).not.toContain('axb');
+  });
+
+  it('includes surrounding lines with context', async () => {
+    const ctx = makeCtx();
+    await writeTool.handler(
+      { file_path: 'a.txt', content: 'l1\nl2\nNEEDLE\nl4\nl5' },
+      ctx,
+    );
+    const r = await grepTool.handler({ pattern: 'NEEDLE', context: 1 }, ctx);
+    expect(r).toContain('a.txt:2: l2');
+    expect(r).toContain('a.txt:3: NEEDLE');
+    expect(r).toContain('a.txt:4: l4');
+    expect(r).not.toContain('a.txt:1: l1');
+    expect(r).not.toContain('a.txt:5: l5');
+  });
+
+  it('separates non-adjacent context groups with --', async () => {
+    const ctx = makeCtx();
+    await writeTool.handler(
+      { file_path: 'a.txt', content: 'hit\nb\nc\nd\ne\nhit' },
+      ctx,
+    );
+    const r = await grepTool.handler({ pattern: 'hit', context: 1 }, ctx);
+    expect(r).toContain('--');
+  });
+
   it('skips documents whose extracted text exceeds the Grep index cap', async () => {
     const ctx = makeCtx();
     const huge = `needle ${'x'.repeat(MAX_INDEX_TEXT_BYTES + 1)}`;
