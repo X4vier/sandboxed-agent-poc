@@ -226,6 +226,19 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
         { signal },
       );
       stream.on('text', (delta) => emit({ type: 'assistant_text_delta', text: delta, ...eventBase }));
+      // Surface each tool_use as soon as its block opens, so the UI can render a
+      // pending row immediately rather than after the whole message (and every
+      // tool input, including large subagent prompts) has finished streaming.
+      stream.on('streamEvent', (event) => {
+        if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+          emit({
+            type: 'tool_call_start',
+            id: event.content_block.id,
+            name: event.content_block.name,
+            ...eventBase,
+          });
+        }
+      });
 
       const final = await stream.finalMessage();
       contextTokens = final.usage.input_tokens ?? 0;

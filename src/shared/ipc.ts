@@ -49,6 +49,11 @@ export interface AgentEventIdentity {
  */
 export type AgentEvent =
   | ({ type: 'assistant_text_delta'; text: string } & AgentEventIdentity)
+  // Emitted the instant a tool_use block begins streaming, before its input has
+  // finished arriving. Lets the UI show the tool/subagent row immediately instead
+  // of waiting for the whole assistant message (with all its tool inputs) to
+  // stream — the gap is most visible for Task calls, whose prompts are large.
+  | ({ type: 'tool_call_start'; id: string; name: string } & AgentEventIdentity)
   | ({ type: 'tool_call'; id: string; name: string; input: unknown } & AgentEventIdentity)
   | ({
       type: 'tool_result';

@@ -268,6 +268,8 @@ interface ToolRowState {
   isTask: boolean;
   userToggled: boolean;
   settingOpen: boolean;
+  /** Whether the full tool input has arrived and been rendered yet. */
+  hasInput: boolean;
 }
 
 const toolRows = new Map<string, ToolRowState>();
@@ -354,8 +356,15 @@ function updateToolSummary(row: ToolRowState, status: ToolStatus, result?: strin
   row.statusEl.textContent = status === 'running' ? '' : status === 'done' ? '✓' : '✗';
   row.metaEl.textContent = status === 'running' ? 'running' : durationText(row.startedAt);
   if (!row.isTask) return;
-  const label = row.taskLabel ?? row.inputSummary;
-  row.summaryEl.textContent = result ? `${label} — ${compactText(result)}` : label;
+  const label = row.taskLabel ?? 'Subagent task';
+  if (status === 'running') {
+    row.summaryEl.textContent = label;
+  } else {
+    const outcome = status === 'failed' ? 'failed' : 'done';
+    row.summaryEl.textContent = result
+      ? `${label} — ${outcome} · ${compactText(result)}`
+      : `${label} — ${outcome}`;
+  }
 }
 
 function markAgentToolStarted(agentId: string): void {
@@ -405,6 +414,77 @@ function appendAssistantText(text: string, agentId: string, parentAgentId: strin
   scrollTranscript();
 }
 
+// Create (or fetch) the row for a tool call. Called both when a tool_use block
+// first opens (input not yet known) and — as a fallback — when the full call
+// arrives; the row is built once and reused.
+function ensureToolRow(
+  id: string,
+  name: string,
+  agentId: string,
+  parentAgentId: string | null,
+): ToolRowState {
+  const key = toolKey(agentId, id);
+  const existing = toolRows.get(key);
+  if (existing) return existing;
+  markAgentToolStarted(agentId);
+  assistantByAgent.delete(agentId); // next assistant text starts a fresh block
+  const isTask = name === 'Task';
+  const details = el('details', 'tool') as HTMLDetailsElement;
+  const summary = el('summary');
+  const chevronEl = el('span', 'tool-chevron', '›');
+  chevronEl.setAttribute('aria-hidden', 'true');
+  const statusEl = el('span', 'tool-status running');
+  const nameEl = el('span', 'tool-name', isTask ? 'Subagent' : name);
+  // Placeholder until the input finishes streaming (filled in by addToolCall).
+  const summaryEl = el('span', 'tool-summary', 'Preparing…');
+  const metaEl = el('span', 'tool-meta', 'running');
+  summary.append(chevronEl, statusEl, nameEl, summaryEl, metaEl);
+  details.append(summary);
+  const row: ToolRowState = {
+    details,
+    statusEl,
+    nameEl,
+    summaryEl,
+    metaEl,
+    inputSummary: '',
+    taskLabel: null,
+    startedAt: performance.now(),
+    isTask,
+    userToggled: false,
+    settingOpen: false,
+    hasInput: false,
+  };
+  details.addEventListener('toggle', () => {
+    if (!row.settingOpen) row.userToggled = true;
+  });
+  details.dataset['status'] = 'running';
+  toolRows.set(key, row);
+  containerFor(agentId, parentAgentId).append(details);
+
+  if (isTask) {
+    // Route the spawned subagent's activity into this row's nested body. The row
+    // stays collapsed by default — the summary tells you what the subagent is
+    // doing, and the chevron reveals its tool activity on demand.
+    details.classList.add('task');
+    const body = el('div', 'subagent');
+    details.append(body);
+    agentContainers.set(id, body);
+    assistantByAgent.delete(id);
+    nestedTodos.delete(id);
+  }
+  scrollTranscript();
+  return row;
+}
+
+function addToolCallStart(
+  id: string,
+  name: string,
+  agentId: string,
+  parentAgentId: string | null,
+): void {
+  ensureToolRow(id, name, agentId, parentAgentId);
+}
+
 function addToolCall(
   id: string,
   name: string,
@@ -412,48 +492,18 @@ function addToolCall(
   agentId: string,
   parentAgentId: string | null,
 ): void {
-  markAgentToolStarted(agentId);
-  assistantByAgent.delete(agentId); // next assistant text starts a fresh block
+  const row = ensureToolRow(id, name, agentId, parentAgentId);
+  if (row.hasInput) return;
+  row.hasInput = true;
   const label = taskLabel(input);
-  const details = el('details', 'tool') as HTMLDetailsElement;
-  const summary = el('summary');
-  const statusEl = el('span', 'tool-status running');
-  const nameEl = el('span', 'tool-name', name);
-  const summaryEl = el('span', 'tool-summary', label ?? summarizeInput(input));
-  const metaEl = el('span', 'tool-meta', 'running');
-  summary.append(statusEl, nameEl, summaryEl, metaEl);
+  row.taskLabel = label;
+  row.inputSummary = summarizeInput(input);
+  row.summaryEl.textContent = row.isTask
+    ? (label ?? 'Working…')
+    : (label ?? row.inputSummary);
+  // Insert the input dump right after the summary, above any nested subagent body.
   const inputPre = el('pre', undefined, JSON.stringify(input, null, 2));
-  details.append(summary, inputPre);
-  const row: ToolRowState = {
-    details,
-    statusEl,
-    nameEl,
-    summaryEl,
-    metaEl,
-    inputSummary: summarizeInput(input),
-    taskLabel: label,
-    startedAt: performance.now(),
-    isTask: name === 'Task',
-    userToggled: false,
-    settingOpen: false,
-  };
-  details.addEventListener('toggle', () => {
-    if (!row.settingOpen) row.userToggled = true;
-  });
-  details.dataset['status'] = 'running';
-  toolRows.set(toolKey(agentId, id), row);
-  containerFor(agentId, parentAgentId).append(details);
-
-  if (name === 'Task') {
-    // Route the spawned subagent's activity into this row's nested body.
-    details.classList.add('task');
-    const body = el('div', 'subagent');
-    details.append(body);
-    agentContainers.set(id, body);
-    assistantByAgent.delete(id);
-    nestedTodos.delete(id);
-    setDetailsOpen(row, true);
-  }
+  row.details.querySelector('summary')!.after(inputPre);
   scrollTranscript();
 }
 
@@ -622,6 +672,9 @@ agent.onAgentEvent((event: AgentEvent) => {
   switch (event.type) {
     case 'assistant_text_delta':
       appendAssistantText(event.text, event.agentId, event.parentAgentId);
+      break;
+    case 'tool_call_start':
+      addToolCallStart(event.id, event.name, event.agentId, event.parentAgentId);
       break;
     case 'tool_call':
       addToolCall(event.id, event.name, event.input, event.agentId, event.parentAgentId);
