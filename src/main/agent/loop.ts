@@ -1,8 +1,6 @@
 import type {
-  CacheControlEphemeral,
   ContentBlockParam,
   MessageParam,
-  TextBlockParam,
   Tool,
   ToolResultBlockParam,
   ToolUseBlock,
@@ -13,30 +11,28 @@ import { normalizeWorkspacePath } from '../workspace/normalizePath';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 import { ToolRegistry } from '../tools/registry';
 import type { AgentTool, ToolContext, TokenBudget } from './types';
-import type { CompletionEngine, EngineEvent, EngineMessage, EngineRequest } from './engine';
+import type { CompletionEngine } from './engine';
+import {
+  asBlocks,
+  cachedMessages,
+  cachedSystem,
+  cachedTools,
+  CancelledError,
+  extractText,
+  streamTurn,
+} from './messages';
+import {
+  compact,
+  DEFAULT_COMPACTION_SETTINGS,
+  shouldCompact,
+  type CompactionSettings,
+} from './compaction';
 import { buildSystemPrompt } from './systemPrompt';
 
 const MAX_ITERATIONS = 100;
 // Streaming, so HTTP timeouts aren't a concern; leave headroom for adaptive
 // thinking (on by default on Sonnet 5) plus the response.
 const MAX_TOKENS_PER_TURN = 16000;
-// Room for the summary a compaction pass writes before it replaces history.
-const COMPACTION_MAX_TOKENS = 4000;
-// Fraction of the engine's context window at which an agent compacts its
-// history. Task 3 moves this (and the AGENT_COMPACT_THRESHOLD env override) into
-// a CompactionSettings object; kept as a constant here for the engine-injection
-// step so loop.ts no longer imports client.ts.
-const COMPACTION_THRESHOLD = 0.8;
-
-const COMPACTION_INSTRUCTION =
-  'You are about to run out of context window. Write a thorough summary of this ' +
-  'working session so a fresh instance of you can continue seamlessly with only ' +
-  'this summary. Capture: the original task and its current status; every file you ' +
-  'have created, modified, or read and what each contains; concrete findings, ' +
-  'data, and decisions so far; and the exact next steps that remain. Be specific — ' +
-  'name files, values, and paths. Do NOT call any tool; reply with the summary text only.';
-
-const CACHE_CONTROL: CacheControlEphemeral = { type: 'ephemeral' };
 
 export interface AgentRunOptions {
   task: string;
@@ -50,6 +46,8 @@ export interface AgentRunOptions {
   agentId: string;
   parentAgentId: string | null;
   budget: TokenBudget;
+  /** Compaction policy; defaults to {@link DEFAULT_COMPACTION_SETTINGS}. */
+  compaction?: CompactionSettings;
   /**
    * Prior conversation turns to resume from (root follow-ups). When non-empty,
    * `task` is appended as a new user turn after this history instead of starting
@@ -73,13 +71,6 @@ export interface AgentRunOptions {
   drainSteering?: () => MessageParam[];
 }
 
-class CancelledError extends Error {
-  constructor() {
-    super('Run cancelled.');
-    this.name = 'CancelledError';
-  }
-}
-
 interface ExecutedToolUse {
   use: ToolUseBlock;
   result: string;
@@ -89,43 +80,6 @@ interface ExecutedToolUse {
 type TaskOutcome =
   | { status: 'fulfilled'; index: number; execution: ExecutedToolUse }
   | { status: 'rejected'; index: number; error: unknown };
-
-function extractText(content: ContentBlockParam[]): string {
-  return content
-    .filter((b): b is Extract<ContentBlockParam, { type: 'text' }> => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-}
-
-function asBlocks(content: MessageParam['content']): ContentBlockParam[] {
-  return typeof content === 'string' ? [{ type: 'text', text: content }] : content;
-}
-
-function cachedSystem(system: string): TextBlockParam[] {
-  return [{ type: 'text', text: system, cache_control: CACHE_CONTROL }];
-}
-
-function cachedTools(tools: Tool[]): Tool[] {
-  if (tools.length === 0) return tools;
-  const last = tools[tools.length - 1];
-  return [...tools.slice(0, -1), { ...last, cache_control: CACHE_CONTROL }];
-}
-
-function cachedMessages(messages: MessageParam[]): MessageParam[] {
-  if (messages.length === 0) return messages;
-  const last = messages[messages.length - 1];
-  const content = asBlocks(last.content);
-  if (content.length === 0) return messages;
-  const lastBlock = content[content.length - 1];
-  const cachedBlock = { ...(lastBlock as object), cache_control: CACHE_CONTROL } as ContentBlockParam;
-  return [
-    ...messages.slice(0, -1),
-    {
-      role: last.role,
-      content: [...content.slice(0, -1), cachedBlock],
-    },
-  ];
-}
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -169,77 +123,6 @@ function addUsage(budget: TokenBudget, usage: Usage): void {
   );
 }
 
-/**
- * Consume one engine turn to completion, forwarding streamed text / tool-use
- * events to `onEvent`, and return the final message. Centralizes the stop/cancel
- * handling: an aborted turn becomes a CancelledError, a failed turn rethrows its
- * error message (both land in the loop's outer catch).
- */
-async function streamTurn(
-  engine: CompletionEngine,
-  req: EngineRequest,
-  onEvent?: (ev: Exclude<EngineEvent, { type: 'message' }>) => void,
-): Promise<EngineMessage> {
-  let final: EngineMessage | undefined;
-  for await (const ev of engine.stream(req)) {
-    if (ev.type === 'message') final = ev.message;
-    else onEvent?.(ev);
-  }
-  if (!final) throw new Error('The engine did not return a final message.');
-  if (final.stopReason === 'aborted' || req.signal.aborted) throw new CancelledError();
-  if (final.errorMessage) throw new Error(final.errorMessage);
-  return final;
-}
-
-/**
- * Summarize the conversation so far into a single fresh user turn, so the agent
- * can keep working with a small context instead of overflowing the window. The
- * summary request reuses the real history (with an instruction appended to the
- * trailing user turn) and the instruction tells the model to answer with prose,
- * not a tool call. The original task is preserved verbatim at the top of the
- * replacement message. Tools are still passed so the historical tool_use blocks
- * validate.
- */
-async function compactHistory(
-  engine: CompletionEngine,
-  system: string,
-  tools: Tool[],
-  messages: MessageParam[],
-  task: string,
-  budget: TokenBudget,
-  signal: AbortSignal,
-): Promise<MessageParam[]> {
-  const last = messages[messages.length - 1];
-  // Compaction only runs at a turn boundary, where the last message is the user
-  // turn carrying the previous tool results — safe to extend with a text block.
-  const requestMessages: MessageParam[] = [
-    ...messages.slice(0, -1),
-    { role: last.role, content: [...asBlocks(last.content), { type: 'text', text: COMPACTION_INSTRUCTION }] },
-  ];
-
-  const final = await streamTurn(engine, {
-    system: cachedSystem(system),
-    messages: cachedMessages(requestMessages),
-    tools: cachedTools(tools),
-    maxTokens: COMPACTION_MAX_TOKENS,
-    signal,
-    toolChoice: 'none',
-  });
-  addUsage(budget, final.usage);
-  const summary = extractText(final.content).trim();
-
-  return [
-    {
-      role: 'user',
-      content:
-        `${task}\n\n[Your earlier context was automatically compacted to stay within the ` +
-        `window. This is a summary of everything done so far — treat it as your memory of ` +
-        `the session:]\n\n${summary}\n\n[Resume the task from here. Re-read any file whose ` +
-        `current contents you need; they are unchanged in the workspace.]`,
-    },
-  ];
-}
-
 export async function runAgent(opts: AgentRunOptions): Promise<string> {
   const {
     task,
@@ -262,7 +145,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
   const registry = new ToolRegistry(tools);
   const apiTools = registry.toApiTools() as unknown as Tool[];
   const system = buildSystemPrompt(tools, depth);
-  const compactAt = engine.contextWindow * COMPACTION_THRESHOLD;
+  const compactionSettings = opts.compaction ?? DEFAULT_COMPACTION_SETTINGS;
 
   // Media queued by tools during a turn; appended to that turn's user message
   // (after the tool_result blocks) and cleared each iteration.
@@ -285,9 +168,9 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     let isError = false;
     const ctx: ToolContext = {
       ...baseCtx,
-      // Reuse this run's shared vfs/emit/signal/budget; the child gets its own
-      // context window at the next depth and compacts it independently. The shared
-      // budget just accumulates the whole tree's usage for reporting.
+      // Reuse this run's shared vfs/engine/emit/signal/budget; the child gets its
+      // own context window at the next depth and compacts it independently. The
+      // shared budget just accumulates the whole tree's usage for reporting.
       runSubagent: (subtask) =>
         runAgent({
           task: subtask,
@@ -300,6 +183,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
           agentId: use.id,
           parentAgentId: agentId,
           budget,
+          compaction: compactionSettings,
         }),
     };
     try {
@@ -354,9 +238,16 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
 
       // Approaching the window: summarize history and continue rather than
       // letting the next request overflow. Never aborts the run.
-      if (contextTokens > compactAt) {
+      if (shouldCompact(contextTokens, engine.contextWindow, compactionSettings)) {
         emit({ type: 'compaction', contextTokens, ...eventBase });
-        messages = await compactHistory(engine, system, apiTools, messages, task, budget, signal);
+        const compacted = await compact(
+          engine,
+          { system, tools: apiTools, messages, task },
+          compactionSettings,
+          signal,
+        );
+        addUsage(budget, compacted.usage);
+        messages = compacted.messages;
         contextTokens = 0;
       }
 

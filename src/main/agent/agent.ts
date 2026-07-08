@@ -2,6 +2,7 @@ import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import type { AgentEvent } from './events';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 import type { CompletionEngine } from './engine';
+import type { CompactionSettings } from './compaction';
 import { runAgent } from './loop';
 import type { AgentTool, TokenBudget } from './types';
 
@@ -59,6 +60,8 @@ export interface AgentOptions {
   tools: AgentTool[];
   /** Cumulative token usage across the whole conversation (for reporting). */
   budget: TokenBudget;
+  /** Compaction policy; the loop defaults it when omitted. */
+  compaction?: CompactionSettings;
   /** Sink for streamed agent events, forwarded to the renderer over IPC. */
   emit: (event: AgentEvent) => void;
 }
@@ -189,6 +192,7 @@ export class Agent {
       agentId: 'root',
       parentAgentId: null,
       budget: this.opts.budget,
+      ...(this.opts.compaction ? { compaction: this.opts.compaction } : {}),
       ...(this.messages.length > 0
         ? { priorMessages: this.messages, priorContextTokens: this.contextTokens }
         : {}),

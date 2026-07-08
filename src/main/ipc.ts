@@ -14,8 +14,16 @@ import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
 import { Agent } from './agent/agent';
 import { createAnthropicEngine } from './agent/anthropicEngine';
+import { DEFAULT_COMPACTION_SETTINGS } from './agent/compaction';
 import { TokenBudget } from './agent/types';
-import { AGENT_MODEL, hasApiKey, setApiKey, clearApiKey, getEnvApiKey } from './agent/client';
+import {
+  AGENT_MODEL,
+  getCompactionThreshold,
+  hasApiKey,
+  setApiKey,
+  clearApiKey,
+  getEnvApiKey,
+} from './agent/client';
 import { debugLogStatus, logEvent, logLine, stopDebugLog } from './debugLog';
 
 interface AppState {
@@ -169,6 +177,9 @@ export function registerIpc(window: BrowserWindow): void {
         engine: createAnthropicEngine(),
         tools: buildTools(),
         budget: new TokenBudget(),
+        // Honour the AGENT_COMPACT_THRESHOLD env override (dev knob); other
+        // compaction settings keep their defaults.
+        compaction: { ...DEFAULT_COMPACTION_SETTINGS, thresholdFraction: getCompactionThreshold() },
         emit,
       });
       logLine('run_start', JSON.stringify({ task: trimmed, model: AGENT_MODEL, fileCount: vfs.fileCount }));
