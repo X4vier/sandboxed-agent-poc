@@ -5,6 +5,8 @@ An Electron desktop proof-of-concept: a Claude-powered agent that works on
 Everything runs locally except the LLM API call, and agent-visible file content
 never touches disk.
 
+**Download:** [latest release (portable Windows .exe)](https://github.com/X4vier/sandboxed-agent-poc/releases/latest)
+
 ## Setup
 
 Requires Node 22.13+ and npm. No compiler toolchain is needed: the dependency
@@ -107,8 +109,11 @@ Renderer (UI) ── IPC (contextBridge) ── Main process
   older turns into a single message — before the window overflows.
 - **VirtualWorkspace** (`src/main/workspace`) is a `Map`-backed VFS keyed by
   normalized POSIX-relative paths, tracking `provided | created | modified`.
+  A seed corpus (~100 country .docx/.pdf files in `seed-data/`) is pre-staged
+  into the VFS on launch.
 - **Tools** (`src/main/tools`): `Read`, `Write`, `Edit`, `Glob`, `Grep`,
-  `list_files`, `read_document`, `run_javascript`. Names and parameter shapes
+  `list_files`, `read_document`, `run_javascript`, `Task` (spawns a subagent
+  sharing the same VFS, max depth 2), and `TodoWrite`. Names and parameter shapes
   mirror Claude Code's bash-flavored tool API (`cat -n` reads, regex Grep, glob
   matching) so the model hits fewer malformed calls; paths remain
   workspace-relative rather than absolute. Each reaches the OS only through an
@@ -161,7 +166,8 @@ Renderer (UI) ── IPC (contextBridge) ── Main process
 
 `npm test` covers the security-critical surface: the path validator (every case
 in the spec), the VirtualWorkspace (status transitions, caps, binary detection),
-the six tools, the QuickJS capability sandbox (no ambient globals, validator
+the file/document tools, the Task subagent and todo tools, the QuickJS
+capability sandbox (no ambient globals, validator
 enforcement in-guest, infinite-loop interruption), and the agent loop (tool
 execution, `is_error` handling, cancellation) against a mocked client — no
 network required.
