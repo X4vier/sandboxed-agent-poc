@@ -67,7 +67,16 @@ describe('debugLog', () => {
     const status = log.debugLogStatus();
     expect(status.active).toBe(true);
     expect(status.fileName).toMatch(/^agent-run-.*\.jsonl$/);
-    log.logEvent(event({ type: 'turn_complete', usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } }));
+    log.logEvent(event({
+      type: 'turn_complete',
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        totalTokens: 3,
+      },
+    }));
     log.logLine('run_end', JSON.stringify({ status: 'completed' }));
     await log.stopDebugLog();
 

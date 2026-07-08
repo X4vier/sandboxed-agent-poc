@@ -1,10 +1,13 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type {
+  CacheControlEphemeral,
   ContentBlockParam,
   MessageParam,
+  TextBlockParam,
   Tool,
   ToolResultBlockParam,
   ToolUseBlock,
+  Usage,
 } from '@anthropic-ai/sdk/resources/messages';
 import type { AgentEvent } from '../../shared/ipc';
 import { normalizeWorkspacePath } from '../workspace/normalizePath';
@@ -20,7 +23,7 @@ import {
 } from './client';
 import { buildSystemPrompt } from './systemPrompt';
 
-const MAX_ITERATIONS = 30;
+const MAX_ITERATIONS = 100;
 // Streaming, so HTTP timeouts aren't a concern; leave headroom for adaptive
 // thinking (on by default on Sonnet 5) plus the response.
 const MAX_TOKENS_PER_TURN = 16000;
@@ -34,6 +37,8 @@ const COMPACTION_INSTRUCTION =
   'have created, modified, or read and what each contains; concrete findings, ' +
   'data, and decisions so far; and the exact next steps that remain. Be specific — ' +
   'name files, values, and paths. Do NOT call any tool; reply with the summary text only.';
+
+const CACHE_CONTROL: CacheControlEphemeral = { type: 'ephemeral' };
 
 export interface AgentRunOptions {
   task: string;
@@ -75,6 +80,49 @@ function asBlocks(content: MessageParam['content']): ContentBlockParam[] {
   return typeof content === 'string' ? [{ type: 'text', text: content }] : content;
 }
 
+function cachedSystem(system: string): TextBlockParam[] {
+  return [{ type: 'text', text: system, cache_control: CACHE_CONTROL }];
+}
+
+function cachedTools(tools: Tool[]): Tool[] {
+  if (tools.length === 0) return tools;
+  const last = tools[tools.length - 1];
+  return [...tools.slice(0, -1), { ...last, cache_control: CACHE_CONTROL }];
+}
+
+function cachedMessages(messages: MessageParam[]): MessageParam[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  const content = asBlocks(last.content);
+  if (content.length === 0) return messages;
+  const lastBlock = content[content.length - 1];
+  const cachedBlock = { ...(lastBlock as object), cache_control: CACHE_CONTROL } as ContentBlockParam;
+  return [
+    ...messages.slice(0, -1),
+    {
+      role: last.role,
+      content: [...content.slice(0, -1), cachedBlock],
+    },
+  ];
+}
+
+function inputUsage(usage: Usage): number {
+  return (
+    usage.input_tokens +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0)
+  );
+}
+
+function addUsage(budget: TokenBudget, usage: Usage): void {
+  budget.add(
+    usage.input_tokens,
+    usage.output_tokens,
+    usage.cache_read_input_tokens ?? 0,
+    usage.cache_creation_input_tokens ?? 0,
+  );
+}
+
 /**
  * Summarize the conversation so far into a single fresh user turn, so the agent
  * can keep working with a small context instead of overflowing the window. The
@@ -106,16 +154,16 @@ async function compactHistory(
     {
       model: AGENT_MODEL,
       max_tokens: COMPACTION_MAX_TOKENS,
-      system,
-      messages: requestMessages,
-      tools,
+      system: cachedSystem(system),
+      messages: cachedMessages(requestMessages),
+      tools: cachedTools(tools),
       tool_choice: { type: 'none' },
       output_config: { effort },
     },
     { signal },
   );
   const final = await stream.finalMessage();
-  budget.add(final.usage.input_tokens ?? 0, final.usage.output_tokens);
+  addUsage(budget, final.usage);
   const summary = extractText(final.content as ContentBlockParam[]).trim();
 
   return [
@@ -218,9 +266,9 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
         {
           model: AGENT_MODEL,
           max_tokens: MAX_TOKENS_PER_TURN,
-          system,
-          messages,
-          tools: apiTools,
+          system: cachedSystem(system),
+          messages: cachedMessages(messages),
+          tools: cachedTools(apiTools),
           output_config: { effort },
         },
         { signal },
@@ -241,8 +289,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       });
 
       const final = await stream.finalMessage();
-      contextTokens = final.usage.input_tokens ?? 0;
-      budget.add(contextTokens, final.usage.output_tokens);
+      contextTokens = inputUsage(final.usage);
+      addUsage(budget, final.usage);
       emit({ type: 'turn_complete', usage: budget.snapshot(), ...eventBase });
 
       const assistantContent = final.content as ContentBlockParam[];
@@ -299,7 +347,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       pendingMedia.length = 0;
     }
 
-    throw new Error(`Reached the ${MAX_ITERATIONS}-iteration limit without finishing.`);
+    throw new Error(`Task was cut off at the ${MAX_ITERATIONS}-iteration limit before it finished.`);
   } catch (e) {
     if (e instanceof CancelledError) {
       if (isRoot) emit({ type: 'error', message: 'Run cancelled.', ...eventBase });

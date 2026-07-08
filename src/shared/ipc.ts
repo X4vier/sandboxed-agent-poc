@@ -71,6 +71,8 @@ export type AgentEvent =
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
   totalTokens: number;
 }
 

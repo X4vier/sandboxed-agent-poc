@@ -570,8 +570,18 @@ function addBanner(
   scrollTranscript();
 }
 
-function setTokens(usage: { inputTokens: number; outputTokens: number; totalTokens: number }): void {
-  tokensEl.textContent = `tokens: ${usage.inputTokens} in / ${usage.outputTokens} out / ${usage.totalTokens} total`;
+function setTokens(usage: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  totalTokens: number;
+}): void {
+  const inputTotal = usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
+  const cached = usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
+  const cachedPct = inputTotal > 0 ? Math.round((cached / inputTotal) * 100) : 0;
+  const cacheNote = cached > 0 ? ` (${cachedPct}% cached)` : '';
+  tokensEl.textContent = `tokens: ${inputTotal} in${cacheNote} / ${usage.outputTokens} out / ${usage.totalTokens} total`;
 }
 
 // ---------- run / cancel ----------
