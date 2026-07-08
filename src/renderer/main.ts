@@ -641,6 +641,9 @@ agent.onAgentEvent((event: AgentEvent) => {
       break;
     case 'turn_complete':
       setTokens(event.usage);
+      // Keep the workspace panel live during a run: the VFS is populated at
+      // task start and mutated by Write/Edit as the run progresses.
+      void refreshWorkspace();
       break;
     case 'error':
       removeAgentThinking(event.agentId);
