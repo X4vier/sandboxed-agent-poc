@@ -315,6 +315,25 @@ textarea#task:focus {
   padding: 0.5rem 0.7rem;
   color: var(--text);
 }
+/* A message steered into an in-flight run: dashed edge + a small badge, so it
+   reads as an interjection rather than a fresh turn. */
+.msg.user.steered {
+  border-left-style: dashed;
+  opacity: 0.9;
+}
+.steer-badge {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--bg);
+  background: var(--accent);
+  vertical-align: middle;
+}
 
 /* ---------- rendered markdown ---------- */
 .msg.markdown {

@@ -34,7 +34,7 @@ interface ToolRowState {
 export interface TranscriptView {
   addBanner(message: string, agentId?: string, parentAgentId?: string | null): void;
   appendIdleHint(): void;
-  appendUserMessage(text: string): void;
+  appendUserMessage(text: string, steered?: boolean): void;
   clear(): void;
   handleEvent(event: AgentEvent): void;
 }
@@ -331,11 +331,16 @@ export function createTranscriptView(
     appendIdleHint(): void {
       transcriptEl.append(el('div', 'idle-hint', 'Stage files, describe a task, and press Run.'));
     },
-    appendUserMessage(text: string): void {
+    appendUserMessage(text: string, steered = false): void {
       removeAgentThinking(ROOT_AGENT_ID);
       assistantByAgent.delete(ROOT_AGENT_ID);
-      const node = el('div', 'msg user');
-      node.textContent = text;
+      const node = el('div', steered ? 'msg user steered' : 'msg user');
+      if (steered) {
+        // Mark messages injected into a run already in progress, so the transcript
+        // reads correctly (they land at the agent's next turn boundary, not now).
+        node.append(el('span', 'steer-badge', 'steering'));
+      }
+      node.append(document.createTextNode(text));
       transcriptEl.append(node);
       transcriptPinned = true;
       forceScrollTranscript();

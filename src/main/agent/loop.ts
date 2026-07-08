@@ -64,6 +64,13 @@ export interface AgentRunOptions {
    * conversation with a follow-up message.
    */
   onConversationState?: (messages: MessageParam[], contextTokens: number) => void;
+  /**
+   * Root only: polled at each turn boundary (after tool results are appended, and
+   * at the point where the loop would otherwise stop) for user messages to inject
+   * mid-run. Returning a non-empty array appends those turns and keeps the loop
+   * going instead of stopping. Subagents never pass this.
+   */
+  drainSteering?: () => MessageParam[];
 }
 
 class CancelledError extends Error {
@@ -231,6 +238,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
     priorMessages,
     priorContextTokens,
     onConversationState,
+    drainSteering,
   } = opts;
   const isRoot = depth === 0;
   const eventBase = { agentId, parentAgentId, depth };
@@ -371,6 +379,15 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
       messages.push({ role: 'assistant', content: assistantContent });
 
       if (final.stop_reason !== 'tool_use') {
+        // The model is ready to stop. Before doing so, pull any user messages the
+        // caller has queued (steering): if there are any, append them as a fresh
+        // user turn and keep going rather than ending the run. The last message
+        // is the assistant turn just pushed, so this preserves alternation.
+        const steered = drainSteering?.() ?? [];
+        if (steered.length > 0) {
+          messages.push(...steered);
+          continue;
+        }
         const text = extractText(assistantContent);
         if (isRoot) {
           // Hand the completed history back so the caller can persist it and let
@@ -422,7 +439,12 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
         }
         return toToolResultBlock(execution);
       });
-      messages.push({ role: 'user', content: [...results, ...pendingMedia] });
+      // Fold any queued steering messages into this same user turn, after the
+      // tool results and media. Keeping them in one turn avoids two consecutive
+      // user messages and lets the compaction accounting (driven by the next
+      // turn's input_tokens) and the handed-back history see them for free.
+      const steeredBlocks = (drainSteering?.() ?? []).flatMap((m) => asBlocks(m.content));
+      messages.push({ role: 'user', content: [...results, ...pendingMedia, ...steeredBlocks] });
       pendingMedia.length = 0;
     }
 

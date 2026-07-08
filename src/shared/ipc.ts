@@ -170,8 +170,15 @@ export interface AgentBridge {
    * Run a task. If a conversation is already in progress, `task` is sent as a
    * follow-up message that continues it (preserving history and the workspace);
    * otherwise a fresh conversation and workspace are started from the staged files.
+   * Resolves once the conversation is fully idle again (including any steered turns).
    */
   startTask(task: string): Promise<void>;
+  /**
+   * Inject a message into the run that is already in progress; it is picked up at
+   * the next turn boundary rather than starting a new run. Resolves as soon as the
+   * message is queued (the run continues in the background).
+   */
+  steer(message: string): Promise<void>;
   cancelTask(): Promise<void>;
   /** Discard the current conversation and workspace so the next task starts fresh. */
   resetConversation(): Promise<void>;

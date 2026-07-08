@@ -77,10 +77,14 @@ const workspace = createWorkspaceView(
 );
 
 function updateComposerMode(): void {
-  runBtn.textContent = conversationActive ? 'Send' : 'Run';
-  taskInput.placeholder = conversationActive
-    ? 'Send a follow-up message…'
-    : 'Describe the task for the agent…';
+  // While a run is active the composer stays live and submits a steering message
+  // into it; otherwise it starts a run (fresh, or a follow-up on an open chat).
+  runBtn.textContent = running ? 'Steer' : conversationActive ? 'Send' : 'Run';
+  taskInput.placeholder = running
+    ? 'Steer the running agent…'
+    : conversationActive
+      ? 'Send a follow-up message…'
+      : 'Describe the task for the agent…';
   newChatBtn.hidden = !conversationActive;
 }
 
@@ -115,16 +119,30 @@ const apiKeyGate = createApiKeyGate(
 
 function setRunning(next: boolean): void {
   running = next;
-  runBtn.disabled = next;
+  // The Run button stays live while running — it becomes the Steer button.
   cancelBtn.disabled = !next;
   newChatBtn.disabled = next;
   staging.setRunning(next);
+  updateComposerMode();
 }
 
 runBtn.addEventListener('click', async () => {
   const task = taskInput.value.trim();
   if (task.length === 0) {
-    toast.show(conversationActive ? 'Enter a message first.' : 'Enter a task first.', true);
+    toast.show(running || conversationActive ? 'Enter a message first.' : 'Enter a task first.', true);
+    return;
+  }
+
+  // Mid-run submissions steer the active run rather than starting a new one; the
+  // originating startTask promise stays pending and settles when the run rests.
+  if (running) {
+    transcript.appendUserMessage(task, true);
+    taskInput.value = '';
+    try {
+      await agent.steer(task);
+    } catch (err) {
+      transcript.addBanner(errorMessage(err));
+    }
     return;
   }
 

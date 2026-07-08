@@ -369,6 +369,76 @@ describe('runAgent loop', () => {
     expect(queue.length).toBe(0);
   });
 
+  it('injects a steering message at the stop boundary and keeps going', async () => {
+    // Turn 1 wants to stop, but a steering message is queued, so the loop must
+    // append it as a fresh user turn and run a second turn instead of finishing.
+    queue.push({ text: 'First pass done.', stopReason: 'end_turn' });
+    queue.push({ text: 'Now really done.', stopReason: 'end_turn' });
+
+    const pending: Array<{ role: 'user'; content: string }> = [{ role: 'user', content: 'actually also do Y' }];
+    let saved: { messages: unknown[] } | null = null;
+
+    const result = await runAgent({
+      task: 'do X',
+      tools: buildTools(),
+      vfs: new VirtualWorkspace(),
+      emit: () => undefined,
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget: new TokenBudget(),
+      drainSteering: () => pending.splice(0, 1),
+      onConversationState: (messages) => {
+        saved = { messages };
+      },
+    });
+
+    // The run did not stop on the first end_turn; it continued and returned the
+    // second turn's text.
+    expect(result).toBe('Now really done.');
+    // The second request carried the steering message as a trailing user turn.
+    const second = paramsAt(1);
+    expect(second.messages).toHaveLength(3);
+    expect(second.messages[0]?.content).toBe('do X');
+    expect(second.messages[1]?.role).toBe('assistant');
+    expect(second.messages[2]?.role).toBe('user');
+    const steerBlocks = second.messages[2]?.content as Array<{ type: string; text?: string }>;
+    expect(steerBlocks[0]).toMatchObject({ type: 'text', text: 'actually also do Y' });
+    // The handed-back history includes the steered turn (user, assistant, user, assistant).
+    expect(saved!.messages).toHaveLength(4);
+  });
+
+  it('folds a steering message into the tool-result turn', async () => {
+    queue.push({
+      toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'a.txt', content: 'x' } }],
+      stopReason: 'tool_use',
+    });
+    queue.push({ text: 'Handled the tools and the steer.', stopReason: 'end_turn' });
+
+    const pending: Array<{ role: 'user'; content: string }> = [{ role: 'user', content: 'while you work, note Z' }];
+
+    await runAgent({
+      task: 'write a.txt',
+      tools: buildTools(),
+      vfs: new VirtualWorkspace(),
+      emit: () => undefined,
+      signal: new AbortController().signal,
+      depth: 0,
+      agentId: 'root',
+      parentAgentId: null,
+      budget: new TokenBudget(),
+      drainSteering: () => pending.splice(0, 1),
+    });
+
+    // The user turn following the assistant's tool call carries BOTH the
+    // tool_result and the steering text, in one message (no dangling user turn).
+    const second = paramsAt(1);
+    const toolTurn = second.messages[2]?.content as Array<{ type: string; text?: string }>;
+    expect(toolTurn.some((b) => b.type === 'tool_result')).toBe(true);
+    expect(toolTurn.some((b) => b.type === 'text' && b.text === 'while you work, note Z')).toBe(true);
+  });
+
   it('aborts before an API call when the signal is already aborted', async () => {
     const ac = new AbortController();
     ac.abort();
