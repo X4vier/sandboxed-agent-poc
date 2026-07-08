@@ -9,7 +9,7 @@ import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
 import { runAgent } from './agent/loop';
 import { TokenBudget } from './agent/types';
-import { AGENT_MODEL, hasApiKey, setApiKey, clearApiKey } from './agent/client';
+import { AGENT_MODEL, hasApiKey, setApiKey, clearApiKey, getEnvApiKey } from './agent/client';
 import { debugLogStatus, logEvent, logLine, stopDebugLog } from './debugLog';
 
 interface AppState {
@@ -49,8 +49,11 @@ export function registerIpc(window: BrowserWindow): void {
   };
 
   // API key is held only in the main process memory (see agent/client.ts). The
-  // renderer never receives it back — it can only set, clear, or check presence.
+  // renderer can set, clear, or check presence; the only value it can read back
+  // is an ambient env-provided key (dev-only seed), used to pre-fill the input.
   ipcMain.handle('agent:hasApiKey', (): boolean => hasApiKey());
+
+  ipcMain.handle('agent:getEnvApiKey', (): string | null => getEnvApiKey());
 
   ipcMain.handle('agent:setApiKey', (_e, key: unknown): void => {
     setApiKey(requireString(key, 'key'));

@@ -13,8 +13,21 @@ import Anthropic from '@anthropic-ai/sdk';
  * `agent:setApiKey` IPC handler); an ambient ANTHROPIC_API_KEY, if present, is
  * used as a dev-only seed so contributors need not retype it each launch.
  */
-let apiKey: string | null = process.env['ANTHROPIC_API_KEY']?.trim() || null;
+/**
+ * An ambient ANTHROPIC_API_KEY from the environment (.env), retained separately
+ * so it can pre-fill the UI even after the user clears the active key. This is a
+ * dev-only convenience; it is never populated by a user-typed key and never
+ * written to disk by us.
+ */
+const envApiKey: string | null = process.env['ANTHROPIC_API_KEY']?.trim() || null;
+
+let apiKey: string | null = envApiKey;
 let client: Anthropic | null = null;
+
+/** The ambient env-provided key, if any, for pre-filling the UI (dev only). */
+export function getEnvApiKey(): string | null {
+  return envApiKey;
+}
 
 /** Store an ephemeral API key for this session and reset the cached client. */
 export function setApiKey(key: string): void {

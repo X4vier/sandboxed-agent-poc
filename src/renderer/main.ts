@@ -97,7 +97,7 @@ document.getElementById('app')!.innerHTML = `
         spellcheck="false"
       />
       <div class="gate-error" id="gate-error" hidden></div>
-      <button type="submit" class="primary">Save key</button>
+      <button type="submit" class="primary">Continue</button>
     </form>
   </div>
 `;
@@ -711,11 +711,12 @@ agent.onAgentEvent((event: AgentEvent) => {
 });
 
 // ---------- API key gate ----------
-function openGate(): void {
+async function openGate(): Promise<void> {
   gate.hidden = false;
   gateError.hidden = true;
-  apiKeyInput.value = '';
+  apiKeyInput.value = (await agent.getEnvApiKey()) ?? '';
   apiKeyInput.focus();
+  apiKeyInput.select();
 }
 
 gateForm.addEventListener('submit', async (e) => {
@@ -739,11 +740,11 @@ gateForm.addEventListener('submit', async (e) => {
 
 changeKeyBtn.addEventListener('click', async () => {
   await agent.clearApiKey();
-  openGate();
+  await openGate();
 });
 
 async function checkApiKey(): Promise<void> {
-  if (!(await agent.hasApiKey())) openGate();
+  if (!(await agent.hasApiKey())) await openGate();
 }
 
 // ---------- init ----------
