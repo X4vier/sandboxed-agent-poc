@@ -23,6 +23,7 @@ export function buildSystemPrompt(tools: AgentTool[], depth = 0): string {
     toolList,
     '',
     'Guidance:',
+    '- Before doing substantive work, briefly inspect what files are available with list_files or Glob unless the task already names the exact file(s) to use.',
     '- Use Glob to find files by name/pattern and Grep to search their contents, including extracted text inside PDFs and DOCX files; list_files shows the whole workspace with provided/created/modified state, including each file\'s byte size.',
     '- Read a file before you Edit it: Edit needs the exact text, and Read output is `cat -n` style — copy old_string WITHOUT the leading line-number and tab.',
     '- Read and read_document are BOUNDED: each returns one window of a file and tells you the offset to resume from — for read_document the unit is pages for PDFs (attached to view; default 10, max 20 per call) and lines for text documents (default 2000). Do not assume one call gave you the whole file. For a large corpus or document, use Grep before reading: it searches inside PDFs and DOCX too, reports page numbers for PDF hits, and lets you jump straight to read_document at the reported page instead of paging through everything.',
