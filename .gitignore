@@ -5,5 +5,7 @@ release/
 .env
 .env.local
 *.log
+agent-run-*.jsonl
+agent-debug/
 .DS_Store
 plan.md

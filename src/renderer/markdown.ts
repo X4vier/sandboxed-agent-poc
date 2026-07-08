@@ -7,7 +7,7 @@
  * no-external-dependency posture, and keeps untrusted model text inert.
  *
  * Scope is intentionally small (headings, emphasis, code, lists, blockquotes,
- * links) — enough for chat-style responses, not a spec-complete CommonMark
+ * links, tables) — enough for chat-style responses, not a spec-complete CommonMark
  * implementation. It is safe to re-run on every streaming delta.
  */
 
@@ -17,6 +17,9 @@ const UL_ITEM = /^\s*[-*+]\s+/;
 const OL_ITEM = /^\s*\d+\.\s+/;
 const QUOTE = /^\s*>\s?/;
 const BLANK = /^\s*$/;
+const TABLE_ROW = /\|/;
+// Header/body separator: cells of dashes with optional alignment colons, e.g. |---|:--:|
+const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /** Inline spans: code, bold, italic, links. */
 const INLINE_SOURCE =
@@ -61,6 +64,40 @@ function renderInline(text: string): Node[] {
   }
   if (last < text.length) nodes.push(document.createTextNode(text.slice(last)));
   return nodes;
+}
+
+/** Split a table row into cell strings, honoring leading/trailing pipes and `\|` escapes. */
+function splitRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  const cells: string[] = [];
+  let cur = '';
+  for (let j = 0; j < s.length; j += 1) {
+    const ch = s[j];
+    if (ch === '\\' && s[j + 1] === '|') {
+      cur += '|';
+      j += 1;
+    } else if (ch === '|') {
+      cells.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+/** True when `lines[i]` opens a GFM table: a pipe row followed by a delimiter row. */
+function isTableStart(lines: string[], i: number): boolean {
+  const next = lines[i + 1];
+  return (
+    TABLE_ROW.test(lines[i]) &&
+    next !== undefined &&
+    next.includes('-') &&
+    TABLE_DELIM.test(next)
+  );
 }
 
 function isBlockStart(line: string): boolean {
@@ -144,9 +181,46 @@ export function renderMarkdown(md: string): DocumentFragment {
       continue;
     }
 
+    // Table — a pipe row followed by a `|---|---|` delimiter row.
+    if (isTableStart(lines, i)) {
+      const headerCells = splitRow(lines[i]);
+      const aligns = splitRow(lines[i + 1]).map((c) =>
+        c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : ''
+      );
+      i += 2;
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      headerCells.forEach((cell, col) => {
+        const th = document.createElement('th');
+        if (aligns[col]) th.style.textAlign = aligns[col];
+        th.append(...renderInline(cell));
+        headRow.append(th);
+      });
+      thead.append(headRow);
+      table.append(thead);
+      const tbody = document.createElement('tbody');
+      while (i < lines.length && TABLE_ROW.test(lines[i]) && !BLANK.test(lines[i])) {
+        const row = document.createElement('tr');
+        const cells = splitRow(lines[i]);
+        // Pad/truncate to the header width, as GFM does.
+        for (let col = 0; col < headerCells.length; col += 1) {
+          const td = document.createElement('td');
+          if (aligns[col]) td.style.textAlign = aligns[col];
+          td.append(...renderInline(cells[col] ?? ''));
+          row.append(td);
+        }
+        tbody.append(row);
+        i += 1;
+      }
+      table.append(tbody);
+      frag.append(table);
+      continue;
+    }
+
     // Paragraph — gather until a blank line or the next block starts.
     const para: string[] = [];
-    while (i < lines.length && !isBlockStart(lines[i])) {
+    while (i < lines.length && !isBlockStart(lines[i]) && !isTableStart(lines, i)) {
       para.push(lines[i]);
       i += 1;
     }
