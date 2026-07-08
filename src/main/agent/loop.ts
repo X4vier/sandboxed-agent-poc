@@ -8,7 +8,7 @@ import type {
   ToolUseBlock,
   Usage,
 } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent } from '../../shared/ipc';
+import type { AgentEvent } from './events';
 import { normalizeWorkspacePath } from '../workspace/normalizePath';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 import { ToolRegistry } from '../tools/registry';

@@ -1,5 +1,5 @@
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent } from '../../shared/ipc';
+import type { AgentEvent } from './events';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 
 /** Minimal JSON Schema shape for tool input definitions (hand-written). */

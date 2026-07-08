@@ -1,4 +1,4 @@
-import type { TodoItem, TodoStatus } from '../../shared/ipc';
+import type { TodoItem, TodoStatus } from '../agent/events';
 import type { AgentTool } from '../agent/types';
 
 const STATUSES: readonly TodoStatus[] = ['pending', 'in_progress', 'completed'];

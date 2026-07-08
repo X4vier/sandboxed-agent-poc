@@ -1,5 +1,5 @@
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent } from '../../shared/ipc';
+import type { AgentEvent } from './events';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 import type { CompletionEngine } from './engine';
 import { runAgent } from './loop';

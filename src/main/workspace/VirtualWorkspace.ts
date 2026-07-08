@@ -1,5 +1,14 @@
-import type { FileStatus, WorkspaceFileInfo } from '../../shared/ipc';
 import { normalizeWorkspacePath, sanitizeExportFilename } from './normalizePath';
+
+/** Provenance/mutation state of a workspace file. */
+export type FileStatus = 'provided' | 'created' | 'modified';
+
+export interface WorkspaceFileInfo {
+  /** Workspace-relative POSIX path (the VFS key). */
+  path: string;
+  size: number;
+  status: FileStatus;
+}
 
 export class WorkspaceError extends Error {
   constructor(message: string) {

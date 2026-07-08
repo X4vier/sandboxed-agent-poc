@@ -1,8 +1,18 @@
 import { app } from 'electron';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { StagedFileInfo } from '../../shared/ipc';
 import { MAX_FILE_BYTES } from './VirtualWorkspace';
+
+export interface StagedFileInfo {
+  /** Original absolute path on the user's disk (main-process only knowledge). */
+  path: string;
+  /** Basename shown to the user. */
+  name: string;
+  /** Size in bytes. */
+  size: number;
+  /** Provenance: the app's bundled default corpus, or a user-added upload. */
+  origin: 'seed' | 'user';
+}
 
 /**
  * The default document corpus that ships with the app (see scripts/seed/). It

@@ -1,80 +1,27 @@
 /**
  * Shared type contracts between the main process, preload bridge, and renderer.
  * No runtime code lives here — types only, so it is safe to import from any context.
+ *
+ * The agent events and workspace/staged file descriptors are owned by the
+ * extractable core (`src/main/agent`, `src/main/workspace`) and re-exported here
+ * for the preload bridge and renderer to consume; the IPC/app-only types
+ * (DebugLogStatus, AuditReport, AgentBridge) are defined below. The dependency
+ * direction is app → core: the core never imports this file.
  */
 
-export type FileStatus = 'provided' | 'created' | 'modified';
+import type { AgentEvent } from '../main/agent/events';
+import type { FileStatus, WorkspaceFileInfo } from '../main/workspace/VirtualWorkspace';
+import type { StagedFileInfo } from '../main/workspace/seedCorpus';
 
-export interface StagedFileInfo {
-  /** Original absolute path on the user's disk (main-process only knowledge). */
-  path: string;
-  /** Basename shown to the user. */
-  name: string;
-  /** Size in bytes. */
-  size: number;
-  /** Provenance: the app's bundled default corpus, or a user-added upload. */
-  origin: 'seed' | 'user';
-}
-
-export interface WorkspaceFileInfo {
-  /** Workspace-relative POSIX path (the VFS key). */
-  path: string;
-  size: number;
-  status: FileStatus;
-}
-
-export type TodoStatus = 'pending' | 'in_progress' | 'completed';
-
-export interface TodoItem {
-  /** Imperative description of the step, e.g. "Convert the CSV to JSON". */
-  content: string;
-  status: TodoStatus;
-  /** Present-tense form shown while in progress, e.g. "Converting the CSV to JSON". */
-  activeForm?: string;
-}
-
-/**
- * Identity shared by streamed events from one logical agent run. `agentId` is
- * the stable routing key (`root` for the root agent; a Task tool_use id for a
- * subagent). `depth` remains useful display metadata.
- */
-export interface AgentEventIdentity {
-  agentId: string;
-  parentAgentId: string | null;
-  depth: number;
-}
-
-/**
- * Streamed agent events, mirrored to the renderer over IPC.
- */
-export type AgentEvent =
-  | ({ type: 'assistant_text_delta'; text: string } & AgentEventIdentity)
-  // Emitted the instant a tool_use block begins streaming, before its input has
-  // finished arriving. Lets the UI show the tool/subagent row immediately instead
-  // of waiting for the whole assistant message (with all its tool inputs) to
-  // stream — the gap is most visible for Task calls, whose prompts are large.
-  | ({ type: 'tool_call_start'; id: string; name: string } & AgentEventIdentity)
-  | ({ type: 'tool_call'; id: string; name: string; input: unknown } & AgentEventIdentity)
-  | ({
-      type: 'tool_result';
-      id: string;
-      name: string;
-      result: string;
-      isError: boolean;
-    } & AgentEventIdentity)
-  | ({ type: 'todos'; todos: TodoItem[] } & AgentEventIdentity)
-  | ({ type: 'compaction'; contextTokens: number } & AgentEventIdentity)
-  | ({ type: 'turn_complete'; usage: TokenUsage } & AgentEventIdentity)
-  | ({ type: 'error'; message: string } & AgentEventIdentity)
-  | ({ type: 'done'; summary: string; usage: TokenUsage } & AgentEventIdentity);
-
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  totalTokens: number;
-}
+export type {
+  AgentEvent,
+  AgentEventIdentity,
+  TodoItem,
+  TodoStatus,
+  TokenUsage,
+} from '../main/agent/events';
+export type { FileStatus, WorkspaceFileInfo } from '../main/workspace/VirtualWorkspace';
+export type { StagedFileInfo } from '../main/workspace/seedCorpus';
 
 export interface DebugLogStatus {
   /** Whether AGENT_DEBUG_LOG is active and has not been stopped this session. */
