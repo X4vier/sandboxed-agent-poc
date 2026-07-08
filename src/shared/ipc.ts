@@ -83,6 +83,63 @@ export interface DebugLogStatus {
   fileName: string | null;
 }
 
+/**
+ * A live snapshot of the app's security posture, assembled fresh on each request
+ * from real process state (VFS contents, a disk-write ledger, and a network-egress
+ * ledger). Backs the in-app audit panel. Everything here is *self-reported*: it
+ * lets a reviewer see what the app believes it is doing, and the README documents
+ * how to confirm the same facts independently (strace/lsof/Process Monitor).
+ */
+export interface AuditReport {
+  /** The in-RAM virtual workspace — the only place agent-visible file content lives. */
+  workspace: {
+    /** Whether a workspace currently exists (a task has run this conversation). */
+    active: boolean;
+    fileCount: number;
+    totalBytes: number;
+    /** Count and byte totals split by provenance status. */
+    byStatus: Record<FileStatus, { count: number; bytes: number }>;
+    maxFileBytes: number;
+    maxTotalBytes: number;
+  };
+  /**
+   * Workspace content written to disk this session. This only ever increments
+   * through the user-initiated export handlers; a fresh, idle session reads 0.
+   */
+  disk: {
+    writeCount: number;
+    bytesWritten: number;
+    /** Absolute path of the most recent export, or null if nothing was exported. */
+    lastPath: string | null;
+  };
+  /**
+   * Opt-in debug logging (AGENT_DEBUG_LOG). When active, agent events and tool
+   * inputs ARE being written to disk — the audit panel must say so.
+   */
+  debugLog: {
+    active: boolean;
+    fileName: string | null;
+  };
+  /**
+   * Outbound network egress observed by the guards this session: every main
+   * process fetch (globalThis.fetch is replaced with the audited guard, and the
+   * SDK client is wired through it) plus the Chromium webRequest layer.
+   */
+  network: {
+    /** The single host outbound requests are permitted to reach. */
+    allowedHost: string;
+    requestCount: number;
+    /** Per-host request tallies (should only ever contain the allowed host). */
+    hosts: { host: string; count: number }[];
+    /** Hosts other than the allowed one that were attempted and blocked. */
+    blockedHosts: string[];
+  };
+  /** Ephemeral API-key state. The key itself is never included here. */
+  apiKey: {
+    present: boolean;
+  };
+}
+
 /** The complete contextBridge surface exposed to the renderer. */
 export interface AgentBridge {
   /** Whether an ephemeral API key is currently set in the main process. */
@@ -107,6 +164,8 @@ export interface AgentBridge {
   debugLogStatus(): Promise<DebugLogStatus>;
   /** Disable opt-in debug logging for the rest of the session. */
   stopDebugLog(): Promise<DebugLogStatus>;
+  /** A live snapshot of the app's security posture (RAM workspace, disk writes, egress). */
+  auditReport(): Promise<AuditReport>;
   /**
    * Run a task. If a conversation is already in progress, `task` is sent as a
    * follow-up message that continues it (preserving history and the workspace);

@@ -13,6 +13,7 @@ const bridge: AgentBridge = {
   setSeedIncluded: (included) => ipcRenderer.invoke('agent:setSeedIncluded', included),
   debugLogStatus: () => ipcRenderer.invoke('agent:debugLogStatus'),
   stopDebugLog: () => ipcRenderer.invoke('agent:stopDebugLog'),
+  auditReport: () => ipcRenderer.invoke('agent:auditReport'),
   startTask: (task) => ipcRenderer.invoke('agent:startTask', task),
   cancelTask: () => ipcRenderer.invoke('agent:cancelTask'),
   resetConversation: () => ipcRenderer.invoke('agent:resetConversation'),

@@ -11,6 +11,7 @@ export function renderLayout(root: HTMLElement): void {
           <button id="debug-log-stop" title="Stop debug logging">Stop logging</button>
         </div>
         <div class="tokens" id="tokens">tokens: —</div>
+        <button id="open-audit" class="ghost" title="Show the live security audit">🔒 Audit</button>
         <button id="change-key" class="ghost" title="Change API key">🔑 Change key</button>
       </div>
     </header>
@@ -51,6 +52,21 @@ export function renderLayout(root: HTMLElement): void {
       </section>
     </main>
     <div class="toast" id="toast"></div>
+    <div class="audit" id="audit" hidden>
+      <div class="audit-card">
+        <div class="audit-head">
+          <h2>Live security audit</h2>
+          <button id="audit-close" class="ghost" title="Close">✕ Close</button>
+        </div>
+        <p class="audit-intro">
+          A live view of what this process is doing right now — refreshed while
+          this panel is open. Everything below is measured from the running app.
+          For an <em>independent</em> check, run the OS-level recipe in the
+          README's “Verify it yourself” section and confirm it agrees.
+        </p>
+        <div class="audit-body" id="audit-body"></div>
+      </div>
+    </div>
     <div class="gate" id="gate" hidden>
       <form class="gate-card" id="gate-form">
         <h2>Enter your Anthropic API key</h2>

@@ -3,8 +3,13 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent, StagedFileInfo, WorkspaceFileInfo } from '../shared/ipc';
-import { VirtualWorkspace, MAX_FILE_BYTES } from './workspace/VirtualWorkspace';
+import type { AgentEvent, AuditReport, FileStatus, StagedFileInfo, WorkspaceFileInfo } from '../shared/ipc';
+import {
+  VirtualWorkspace,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+} from './workspace/VirtualWorkspace';
+import { auditLedgerSnapshot, recordExportWrite } from './audit';
 import { loadSeedCorpus } from './workspace/seedCorpus';
 import { sanitizeExportFilename } from './workspace/normalizePath';
 import { buildTools } from './tools/index';
@@ -119,6 +124,38 @@ export function registerIpc(window: BrowserWindow): void {
 
   ipcMain.handle('agent:stopDebugLog', () => stopDebugLog());
 
+  // A live snapshot of the security posture for the in-app audit panel. The
+  // workspace figures come straight from the current in-RAM VFS; the disk and
+  // network figures come from the session ledgers in audit.ts.
+  ipcMain.handle('agent:auditReport', (): AuditReport => {
+    const empty = { count: 0, bytes: 0 };
+    const byStatus: Record<FileStatus, { count: number; bytes: number }> = {
+      provided: { ...empty },
+      created: { ...empty },
+      modified: { ...empty },
+    };
+    let totalBytes = 0;
+    const files = state.vfs?.list() ?? [];
+    for (const file of files) {
+      totalBytes += file.size;
+      byStatus[file.status].count += 1;
+      byStatus[file.status].bytes += file.size;
+    }
+    return {
+      workspace: {
+        active: state.vfs !== null,
+        fileCount: files.length,
+        totalBytes,
+        byStatus,
+        maxFileBytes: MAX_FILE_BYTES,
+        maxTotalBytes: MAX_TOTAL_BYTES,
+      },
+      ...auditLedgerSnapshot(),
+      debugLog: debugLogStatus(),
+      apiKey: { present: hasApiKey() },
+    };
+  });
+
   ipcMain.handle('agent:startTask', async (_e, task: unknown): Promise<void> => {
     const trimmed = requireString(task, 'task').trim();
     if (trimmed.length === 0) throw new Error('Task must not be empty.');
@@ -226,6 +263,7 @@ export function registerIpc(window: BrowserWindow): void {
       if (result.canceled || !result.filePath) return { saved: false };
       // The ONLY workspace-content disk write, besides exportAll.
       await writeFile(result.filePath, content);
+      recordExportWrite(result.filePath, content.length);
       return { saved: true, path: result.filePath };
     },
   );
@@ -248,7 +286,9 @@ export function registerIpc(window: BrowserWindow): void {
         const target = join(dir, ...file.path.split('/'));
         await mkdir(dirname(target), { recursive: true });
         // The ONLY workspace-content disk writes, besides exportFile.
-        await writeFile(target, state.vfs.readBuffer(file.path));
+        const bytes = state.vfs.readBuffer(file.path);
+        await writeFile(target, bytes);
+        recordExportWrite(target, bytes.length);
         count += 1;
       }
       return { saved: true, dir, count };

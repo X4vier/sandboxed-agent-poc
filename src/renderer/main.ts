@@ -1,4 +1,5 @@
 import { createApiKeyGate } from './apiKeyGate';
+import { createAuditView } from './auditView';
 import { createDebugLogView } from './debugLogView';
 import { byId, createToast, errorMessage } from './dom';
 import { renderLayout } from './layout';
@@ -25,6 +26,17 @@ const debugLog = createDebugLogView(
     debugLogEl: byId('debug-log'),
     debugLogLabel: byId('debug-log-label'),
     debugLogStopBtn: byId<HTMLButtonElement>('debug-log-stop'),
+  },
+  toast,
+);
+
+const audit = createAuditView(
+  agent,
+  {
+    auditEl: byId('audit'),
+    auditBody: byId('audit-body'),
+    openBtn: byId<HTMLButtonElement>('open-audit'),
+    closeBtn: byId<HTMLButtonElement>('audit-close'),
   },
   toast,
 );
@@ -144,6 +156,7 @@ newChatBtn.addEventListener('click', async () => {
 
 agent.onAgentEvent((event) => {
   debugLog.refreshIfFileNamePending();
+  audit.refreshIfOpen();
   transcript.handleEvent(event);
 });
 

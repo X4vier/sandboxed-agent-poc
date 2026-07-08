@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { guardedFetch } from '../audit';
 
 /**
  * The ONLY place an Anthropic API client is constructed. To target Bedrock
@@ -53,7 +54,9 @@ export function getClient(): Anthropic {
     if (!apiKey) {
       throw new Error('No Anthropic API key set. Enter your key to run a task.');
     }
-    client = new Anthropic({ apiKey });
+    // guardedFetch is also installed as globalThis.fetch at startup (index.ts);
+    // wiring it explicitly keeps the SDK guarded regardless of install order.
+    client = new Anthropic({ apiKey, fetch: guardedFetch });
   }
   return client;
 }

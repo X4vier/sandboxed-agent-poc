@@ -6,6 +6,12 @@ import { app, BrowserWindow, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { registerIpc } from './ipc';
+import { installProcessFetchGuard } from './audit';
+import { installChromiumEgressGuard } from './egress';
+
+// Egress guard, layer 1: every fetch() from the main process (including the
+// Anthropic SDK's) goes through the audited allowlist.
+installProcessFetchGuard();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -47,6 +53,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Egress guard, layer 2: the Chromium network stack (renderer et al.).
+  installChromiumEgressGuard();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
