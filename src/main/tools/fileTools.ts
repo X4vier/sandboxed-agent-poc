@@ -1,10 +1,13 @@
 import type { AgentTool } from '../agent/types';
+import type { IndexedDocument } from '../documents/textIndex';
+import { textIndexFor } from '../documents/textIndex';
 import { getOptionalBoolean, getOptionalInteger, getOptionalString, getString } from './inputs';
 import { matchGlob, matchesGlobFilter } from './glob';
 
 const READ_DEFAULT_LIMIT = 2000; // lines per Read call
 const READ_MAX_LINE_CHARS = 2000; // per-line cap so one minified line can't flood context
-const GREP_MATCH_CAP = 200;
+const GREP_MATCH_CAP = 100;
+const GREP_MAX_LINE_CHARS = 500;
 
 const statusMarker: Record<string, string> = {
   provided: '[provided]',
@@ -18,6 +21,12 @@ const LINE_TRUNC_MARKER = '… [line truncated]';
 function capLine(line: string): string {
   return line.length > READ_MAX_LINE_CHARS
     ? line.slice(0, READ_MAX_LINE_CHARS) + LINE_TRUNC_MARKER
+    : line;
+}
+
+function capGrepLine(line: string): string {
+  return line.length > GREP_MAX_LINE_CHARS
+    ? line.slice(0, GREP_MAX_LINE_CHARS) + LINE_TRUNC_MARKER
     : line;
 }
 
@@ -265,12 +274,13 @@ type GrepOutputMode = (typeof GREP_OUTPUT_MODES)[number];
 export const grepTool: AgentTool = {
   name: 'Grep',
   description:
-    'Search file contents with a regular expression. Input: { "pattern": "<regex>", "path"?: ' +
+    'Search file contents, including extracted text inside PDFs and DOCX files, with a regular expression. Input: { "pattern": "<regex>", "path"?: ' +
     '"<dir scope>", "glob"?: "<filename filter e.g. *.ts>", "-i"?: false, "output_mode"?: ' +
     '"content" }. pattern is ALWAYS a JavaScript regular expression (escape literal metacharacters). ' +
-    'output_mode: "content" (default) returns "path:line: text"; "files_with_matches" returns matching ' +
-    `paths only; "count" returns "path:count". Set "-i" for case-insensitive. Up to ${GREP_MATCH_CAP} ` +
-    'results are returned, then a truncation note.',
+    'output_mode: "content" (default) returns "path:line: text" for plain text, "path (page N): text" ' +
+    'for PDFs, and "path: text" for DOCX; "files_with_matches" returns matching paths only; "count" ' +
+    `returns "path:count". Set "-i" for case-insensitive. Up to ${GREP_MATCH_CAP} results are returned, ` +
+    'then a truncation note.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -307,38 +317,70 @@ export const grepTool: AgentTool = {
     }
 
     const results: string[] = [];
-    let truncated = false;
-    for (const key of ctx.vfs.keys()) {
-      if (!underPath(key, prefix)) continue;
-      if (globFilter && !matchesGlobFilter(key, globFilter)) continue;
-      const decoded = ctx.vfs.readText(key);
-      if (!decoded.ok) continue; // skip binary
-      const lines = decoded.text.split('\n');
-      let fileCount = 0;
+    const notes: string[] = [];
+    let omitted = 0;
+    const addResult = (line: string): void => {
+      if (results.length < GREP_MATCH_CAP) results.push(line);
+      else omitted += 1;
+    };
+    const searchLines = (
+      lines: string[],
+      format: (line: string, lineNumber: number) => string,
+    ): number => {
+      let count = 0;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i] ?? '';
         if (!regex.test(line)) continue;
-        fileCount += 1;
-        if (outputMode === 'content') {
-          if (results.length >= GREP_MATCH_CAP) {
-            truncated = true;
-            break;
-          }
-          results.push(`${key}:${i + 1}: ${capLine(line)}`);
-        }
+        count += 1;
+        if (outputMode === 'content') addResult(format(line, i + 1));
       }
-      if (truncated) break;
+      return count;
+    };
+    const searchDocument = async (key: string, document: IndexedDocument): Promise<number> => {
+      if (document.skippedReason) {
+        notes.push(`[skipped ${key}: ${document.skippedReason}]`);
+        return 0;
+      }
+      let count = 0;
+      for (const unit of document.units) {
+        const lines = unit.text.split('\n');
+        count += searchLines(lines, (line) => {
+          const capped = capGrepLine(line);
+          return unit.label === 'page' ? `${key} (page ${unit.index}): ${capped}` : `${key}: ${capped}`;
+        });
+      }
+      return count;
+    };
+
+    const textIndex = textIndexFor(ctx.vfs);
+    for (const key of ctx.vfs.keys()) {
+      if (!underPath(key, prefix)) continue;
+      if (globFilter && !matchesGlobFilter(key, globFilter)) continue;
+
+      const fileCount = textIndex.supports(key)
+        ? await searchDocument(key, await textIndex.get(ctx.vfs, key))
+        : (() => {
+            const decoded = ctx.vfs.readText(key);
+            if (!decoded.ok) return 0; // skip unsupported binary
+            return searchLines(decoded.text.split('\n'), (line, lineNumber) =>
+              `${key}:${lineNumber}: ${capGrepLine(line)}`,
+            );
+          })();
+
       if (fileCount > 0 && outputMode !== 'content') {
-        if (results.length >= GREP_MATCH_CAP) {
-          truncated = true;
-          break;
-        }
-        results.push(outputMode === 'count' ? `${key}:${fileCount}` : key);
+        addResult(outputMode === 'count' ? `${key}:${fileCount}` : key);
       }
     }
 
-    if (results.length === 0) return 'No matches found.';
-    const note = truncated ? `\n\n[truncated: first ${GREP_MATCH_CAP} results shown]` : '';
-    return results.join('\n') + note;
+    const suffix = [
+      ...notes,
+      ...(omitted > 0
+        ? [`[... ${omitted} more matches — refine your pattern or add an include filter]`]
+        : []),
+    ];
+    if (results.length === 0) {
+      return suffix.length > 0 ? `No matches found.\n\n${suffix.join('\n')}` : 'No matches found.';
+    }
+    return results.join('\n') + (suffix.length > 0 ? `\n\n${suffix.join('\n')}` : '');
   },
 };

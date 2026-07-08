@@ -7,8 +7,10 @@ never touches disk.
 
 ## Setup
 
-Requires Node 20+ and npm. No compiler toolchain is needed — the dependency
-tree contains no native modules that build on install.
+Requires Node 22.13+ and npm. No compiler toolchain is needed: the dependency
+tree contains no native modules that compile on install. PDF.js may install
+`@napi-rs/canvas` as an optional dependency; it ships prebuilt binaries and is
+only used by PDF.js rendering paths, not by the app's text extraction path.
 
 ```bash
 npm install
@@ -51,7 +53,7 @@ packs `out/` plus production dependencies into a single self-contained `.exe`
 Since the API key is entered at runtime, the packaged exe ships **no secrets**.
 
 If you develop in **WSL**, don't run `build:win` against your Linux checkout —
-its `node_modules` holds Linux-native binaries. Instead use:
+its `node_modules` may hold Linux-native optional dependencies. Instead use:
 
 ```bash
 npm run build:win:wsl           # sync -> Windows install -> build

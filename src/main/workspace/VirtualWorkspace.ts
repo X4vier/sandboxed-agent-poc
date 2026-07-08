@@ -18,6 +18,7 @@ function mb(bytes: number): string {
 interface VfsEntry {
   content: Buffer;
   status: FileStatus;
+  version: number;
 }
 
 /**
@@ -27,6 +28,7 @@ interface VfsEntry {
  */
 export class VirtualWorkspace {
   private readonly files = new Map<string, VfsEntry>();
+  private nextVersion = 1;
 
   get fileCount(): number {
     return this.files.size;
@@ -87,7 +89,7 @@ export class VirtualWorkspace {
   stageProvided(originalName: string, content: Buffer): string {
     this.ensureWithinCaps(content.length, null);
     const key = this.disambiguate(this.safeKeyFromName(originalName));
-    this.files.set(key, { content, status: 'provided' });
+    this.files.set(key, { content, status: 'provided', version: this.nextVersion++ });
     return key;
   }
 
@@ -127,8 +129,16 @@ export class VirtualWorkspace {
     if (!existing) status = 'created';
     else if (existing.status === 'created') status = 'created';
     else status = 'modified';
-    this.files.set(key, { content: buf, status });
+    this.files.set(key, { content: buf, status, version: this.nextVersion++ });
     return key;
+  }
+
+  /** Monotonic content version for cache invalidation. */
+  version(path: string): number {
+    const key = normalizeWorkspacePath(path);
+    const entry = this.files.get(key);
+    if (!entry) throw new WorkspaceError(`No such file: "${key}"`);
+    return entry.version;
   }
 
   status(path: string): FileStatus {

@@ -50,6 +50,16 @@ export interface Extraction {
   attachments?: Attachment[];
 }
 
+/** A searchable slice of extracted text, using the document's natural unit. */
+export interface SearchableTextUnit {
+  /** Unit label shown to the model for locations that need it, e.g. "page". */
+  label: 'page' | 'document';
+  /** 1-indexed unit number. For DOCX's whole-document text this is always 1. */
+  index: number;
+  /** Plain text to search. */
+  text: string;
+}
+
 /** Turns a supported file type into model-consumable content. */
 export interface Extractor {
   /** Lower-case extensions handled, e.g. `['pdf']`. */
@@ -62,4 +72,6 @@ export interface Extractor {
    * the caller how to resume when more remains.
    */
   extract(file: SourceFile, window: ReadWindow): Extraction | Promise<Extraction>;
+  /** Optional full-text units used by the in-memory Grep index. */
+  extractTextUnits?(file: SourceFile): SearchableTextUnit[] | Promise<SearchableTextUnit[]>;
 }

@@ -29,13 +29,20 @@ export const docxExtractor: Extractor = {
   extensions: ['docx'],
   label: 'Word document',
   extract(file: SourceFile, window: ReadWindow): Extraction {
-    const xml = readDocumentXml(file.content);
-    if (xml === null) {
-      return { text: `Could not extract text from "${file.name}".` };
-    }
-    return { text: windowText(xmlToText(xml), file.name, window) };
+    const text = extractDocxText(file);
+    if (text === null) return { text: `Could not extract text from "${file.name}".` };
+    return { text: windowText(text, file.name, window) };
+  },
+  extractTextUnits(file: SourceFile) {
+    const text = extractDocxText(file);
+    return text === null ? [] : [{ label: 'document', index: 1, text }];
   },
 };
+
+function extractDocxText(file: SourceFile): string | null {
+  const xml = readDocumentXml(file.content);
+  return xml === null ? null : xmlToText(xml);
+}
 
 /** Locate and decompress `word/document.xml`, or return null if unavailable. */
 function readDocumentXml(zip: Buffer): string | null {

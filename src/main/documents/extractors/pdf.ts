@@ -1,5 +1,6 @@
 import { PDFDocument } from 'pdf-lib';
-import type { Extraction, Extractor, ReadWindow, SourceFile } from '../types';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import type { Extraction, Extractor, ReadWindow, SearchableTextUnit, SourceFile } from '../types';
 
 /**
  * PDF reading, mirroring Claude Code: rather than scraping a text layer (which
@@ -15,6 +16,7 @@ const MAX_ATTACH_BYTES = 16 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_PDF_PAGES = 10; // pages per call when the caller gives no limit
 export const MAX_PDF_PAGES = 20; // hard cap per call, mirroring Claude Code
+type PdfJsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 
 export const pdfExtractor: Extractor = {
   extensions: ['pdf'],
@@ -66,4 +68,158 @@ export const pdfExtractor: Extractor = {
       ],
     };
   },
+  async extractTextUnits(file: SourceFile): Promise<SearchableTextUnit[]> {
+    if (file.content.length > MAX_SOURCE_BYTES) return [];
+    let task: ReturnType<PdfJsModule['getDocument']> | undefined;
+    try {
+      const { getDocument, VerbosityLevel } = await loadPdfJs();
+      task = getDocument({
+        data: new Uint8Array(file.content),
+        useWorkerFetch: false,
+        verbosity: VerbosityLevel.ERRORS,
+      });
+      const document = await task.promise;
+      const units: SearchableTextUnit[] = [];
+      try {
+        for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+          const page = await document.getPage(pageNumber);
+          try {
+            units.push({
+              label: 'page',
+              index: pageNumber,
+              text: textContentToLines((await page.getTextContent()).items),
+            });
+          } finally {
+            page.cleanup();
+          }
+        }
+      } finally {
+        await document.cleanup();
+      }
+      return units;
+    } catch {
+      return [];
+    } finally {
+      await task?.destroy().catch(() => undefined);
+    }
+  },
 };
+
+async function loadPdfJs(): Promise<PdfJsModule> {
+  installPdfJsDomPolyfills();
+  return import('pdfjs-dist/legacy/build/pdf.mjs');
+}
+
+// PDF.js probes optional canvas rendering support at import time. Grep only uses
+// getTextContent(), so these minimal fallbacks keep text extraction working when
+// @napi-rs/canvas is absent without pretending to support rendering.
+function installPdfJsDomPolyfills(): void {
+  if (!globalThis.DOMMatrix) globalThis.DOMMatrix = MinimalDOMMatrix as unknown as typeof DOMMatrix;
+  if (!globalThis.Path2D) globalThis.Path2D = MinimalPath2D as unknown as typeof Path2D;
+}
+
+function textContentToLines(items: Array<TextItem | { type: string }>): string {
+  const lines: string[] = [];
+  let current = '';
+  let lastY: number | undefined;
+  const flush = (): void => {
+    const line = current.trim();
+    if (line.length > 0) lines.push(line);
+    current = '';
+  };
+
+  for (const item of items) {
+    if (!('str' in item)) continue;
+    const y = typeof item.transform[5] === 'number' ? item.transform[5] : undefined;
+    if (lastY !== undefined && y !== undefined && Math.abs(y - lastY) > 2) flush();
+    if (item.str.length > 0) {
+      if (current.length > 0 && !/\s$/.test(current) && !/^\s/.test(item.str)) current += ' ';
+      current += item.str;
+    }
+    if (item.hasEOL) flush();
+    if (y !== undefined) lastY = y;
+  }
+  flush();
+  return lines.join('\n');
+}
+
+class MinimalDOMMatrix {
+  a = 1;
+  b = 0;
+  c = 0;
+  d = 1;
+  e = 0;
+  f = 0;
+  m11 = 1;
+  m12 = 0;
+  m21 = 0;
+  m22 = 1;
+  m41 = 0;
+  m42 = 0;
+
+  constructor(init?: string | number[]) {
+    if (Array.isArray(init)) {
+      [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+      this.syncAliases();
+    }
+  }
+
+  multiplySelf(): this {
+    return this;
+  }
+
+  preMultiplySelf(): this {
+    return this;
+  }
+
+  translateSelf(): this {
+    return this;
+  }
+
+  scaleSelf(): this {
+    return this;
+  }
+
+  rotateSelf(): this {
+    return this;
+  }
+
+  invertSelf(): this {
+    return this;
+  }
+
+  translate(): this {
+    return this;
+  }
+
+  scale(): this {
+    return this;
+  }
+
+  transformPoint(point?: DOMPointInit): DOMPoint {
+    return { x: point?.x ?? 0, y: point?.y ?? 0, z: point?.z ?? 0, w: point?.w ?? 1 } as DOMPoint;
+  }
+
+  private syncAliases(): void {
+    this.m11 = this.a;
+    this.m12 = this.b;
+    this.m21 = this.c;
+    this.m22 = this.d;
+    this.m41 = this.e;
+    this.m42 = this.f;
+  }
+}
+
+class MinimalPath2D {
+  addPath(): void {}
+  closePath(): void {}
+  moveTo(): void {}
+  lineTo(): void {}
+  bezierCurveTo(): void {}
+  quadraticCurveTo(): void {}
+  rect(): void {}
+  roundRect(): void {}
+  arc(): void {}
+  arcTo(): void {}
+  ellipse(): void {}
+}
