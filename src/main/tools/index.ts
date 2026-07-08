@@ -1,12 +1,10 @@
 import type { AgentTool } from '../agent/types';
-import {
-  editTool,
-  globTool,
-  grepTool,
-  listFilesTool,
-  readTool,
-  writeTool,
-} from './fileTools';
+import { readTool } from './read';
+import { writeTool } from './write';
+import { editTool } from './edit';
+import { globTool } from './globTool';
+import { grepTool } from './grep';
+import { listFilesTool } from './listFiles';
 import { runJavascriptTool } from './runJavascript';
 import { createReadDocumentTool } from './documentTools';
 import { createExtractorRegistry } from '../documents';
