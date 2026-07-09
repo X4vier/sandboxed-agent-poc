@@ -203,13 +203,23 @@ export async function runAgent(opts: AgentRunOptions): Promise<string> {
 
   const executeToolUse = async (use: ToolUseBlock): Promise<ExecutedToolUse> => {
     if (signal.aborted) throw new CancelledError();
-    emit({ type: 'tool_call', id: use.id, name: use.name, input: use.input, ...eventBase });
     let result: string;
     let isError = false;
 
     // Permission hook: a blocked call never executes; its reason is returned to
-    // the model as an error tool result rather than crashing the run.
+    // the model as an error tool result rather than crashing the run. The
+    // tool_call event is emitted only after the decision so a blocked call's
+    // input can be redacted instead of surfacing in the UI.
     const decision = await beforeToolCall?.({ toolUse: use, depth, agentId });
+    const blocked = decision?.block === true;
+    emit({
+      type: 'tool_call',
+      id: use.id,
+      name: use.name,
+      input: blocked ? null : use.input,
+      ...(blocked ? { blocked: true } : {}),
+      ...eventBase,
+    });
     if (decision?.block) {
       result = decision.reason ?? `Tool "${use.name}" was blocked before it ran.`;
       isError = true;

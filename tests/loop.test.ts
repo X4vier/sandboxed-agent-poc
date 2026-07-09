@@ -420,6 +420,9 @@ describe('runAgent loop', () => {
 
     // The blocked write never touched the workspace…
     expect(vfs.fileCount).toBe(0);
+    // …the tool_call event is marked blocked with its input redacted…
+    const toolCall = events.find((e) => e.type === 'tool_call');
+    expect(toolCall).toMatchObject({ type: 'tool_call', blocked: true, input: null });
     // …and the reason came back as an error tool result, not a crash.
     const toolResult = events.find((e) => e.type === 'tool_result');
     expect(toolResult && toolResult.type === 'tool_result' && toolResult.isError).toBe(true);

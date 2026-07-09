@@ -44,7 +44,15 @@ export type AgentEvent =
   // of waiting for the whole assistant message (with all its tool inputs) to
   // stream — the gap is most visible for Task calls, whose prompts are large.
   | ({ type: 'tool_call_start'; id: string; name: string } & AgentEventIdentity)
-  | ({ type: 'tool_call'; id: string; name: string; input: unknown } & AgentEventIdentity)
+  // `blocked` marks a call rejected by the beforeToolCall permission hook; its
+  // input is redacted (null) so blocked inputs never reach the UI.
+  | ({
+      type: 'tool_call';
+      id: string;
+      name: string;
+      input: unknown;
+      blocked?: boolean;
+    } & AgentEventIdentity)
   | ({
       type: 'tool_result';
       id: string;

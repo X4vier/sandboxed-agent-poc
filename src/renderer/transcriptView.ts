@@ -255,10 +255,17 @@ export function createTranscriptView(
     input: unknown,
     agentId: string,
     parentAgentId: string | null,
+    blocked = false,
   ): void {
     const row = ensureToolRow(id, name, agentId, parentAgentId);
     if (row.hasInput) return;
     row.hasInput = true;
+    if (blocked) {
+      row.summaryEl.textContent = 'blocked';
+      row.details.dataset['error'] = 'true';
+      scrollTranscript();
+      return;
+    }
     const label = taskLabel(input);
     row.taskLabel = label;
     row.inputSummary = summarizeInput(input);
@@ -368,7 +375,14 @@ export function createTranscriptView(
           ensureToolRow(event.id, event.name, event.agentId, event.parentAgentId);
           break;
         case 'tool_call':
-          addToolCall(event.id, event.name, event.input, event.agentId, event.parentAgentId);
+          addToolCall(
+            event.id,
+            event.name,
+            event.input,
+            event.agentId,
+            event.parentAgentId,
+            event.blocked === true,
+          );
           break;
         case 'tool_result':
           addToolResult(event.id, event.result, event.isError, event.agentId, event.parentAgentId);
