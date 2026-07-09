@@ -69,9 +69,14 @@ rsync -a --delete \
 # The subshell keeps this CWD change from leaking into artifact collection.
 ISO_WIN="$(wslpath -w "$ISO_WSL")"
 echo "Running Windows pnpm install + build:win in $ISO_WIN"
-# COREPACK_ENABLE_DOWNLOAD_PROMPT=0 skips corepack's interactive "download
-# pnpm@x.y.z?" prompt on first use.
-( cd "$ISO_WSL" && cmd.exe /c "set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& corepack pnpm install && corepack pnpm run build:win" ) \
+# pnpm must be a real command on PATH, not just `corepack pnpm`: electron-builder
+# detects pm=pnpm from the lockfile and spawns `pnpm ls --json` itself while
+# collecting production node_modules. `corepack enable` materializes a pnpm shim
+# into a user-writable dir (the default target is Program Files, which needs
+# admin) that we prepend to PATH. COREPACK_ENABLE_DOWNLOAD_PROMPT=0 skips
+# corepack's interactive "download pnpm@x.y.z?" prompt on first use.
+SHIMS='%USERPROFILE%\.corepack-shims'
+( cd "$ISO_WSL" && cmd.exe /c "set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& (if not exist $SHIMS mkdir $SHIMS) && corepack enable --install-directory $SHIMS pnpm && set PATH=$SHIMS;%PATH%&& pnpm install && pnpm run build:win" ) \
   || { echo "Windows build failed." >&2; exit 1; }
 
 # --- collect the artifact -------------------------------------------------

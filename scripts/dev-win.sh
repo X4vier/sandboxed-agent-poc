@@ -72,13 +72,16 @@ sync_once
 # so a freshly synced lockfile would otherwise go unnoticed and the new dep
 # would be missing at runtime (externalized main-process deps are require()d
 # from node_modules, not bundled). The stamp lives inside node_modules so it
-# survives the source sync. COREPACK_ENABLE_DOWNLOAD_PROMPT=0 skips corepack's
-# interactive "download pnpm@x.y.z?" prompt on first use.
+# survives the source sync. pnpm runs through a corepack shim materialized in a
+# user-writable dir (see build-win.sh for why); COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+# skips corepack's interactive "download pnpm@x.y.z?" prompt on first use.
+SHIMS='%USERPROFILE%\.corepack-shims'
+PNPM_SETUP="set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& (if not exist $SHIMS mkdir $SHIMS) && corepack enable --install-directory $SHIMS pnpm && set PATH=$SHIMS;%PATH%"
 LOCK="$ISO_WSL/pnpm-lock.yaml"
 STAMP="$ISO_WSL/node_modules/.dev-win-install-stamp"
 if [ ! -d "$ISO_WSL/node_modules" ] || [ ! -f "$STAMP" ] || ! cmp -s "$LOCK" "$STAMP"; then
   echo "Installing win32 node_modules (missing or dependencies changed)…"
-  ( cd "$ISO_WSL" && cmd.exe /c "set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& corepack pnpm install" ) \
+  ( cd "$ISO_WSL" && cmd.exe /c "$PNPM_SETUP&& pnpm install" ) \
     || { echo "Windows pnpm install failed." >&2; exit 1; }
   cp "$LOCK" "$STAMP"
 fi
@@ -110,4 +113,4 @@ fi
 # CWD and needs no `cd /d`. Ctrl-C stops the watcher (trap); close the Electron
 # window to end the dev server.
 echo "Starting Windows dev (electron-vite) in $(wslpath -w "$ISO_WSL")"
-( cd "$ISO_WSL" && cmd.exe /c "set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& corepack pnpm run dev" )
+( cd "$ISO_WSL" && cmd.exe /c "$PNPM_SETUP&& pnpm run dev" )
