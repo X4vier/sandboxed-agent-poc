@@ -9,13 +9,15 @@ never touches disk.
 
 ## Setup
 
-Requires Node 22.13+ and npm. No compiler toolchain is needed: the dependency
+Requires Node 22.13+ and pnpm (run it via `corepack pnpm` if you don't have it
+installed — package.json's `packageManager` field pins the version). No compiler
+toolchain is needed: the dependency
 tree contains no native modules that compile on install. PDF.js may install
 `@napi-rs/canvas` as an optional dependency; it ships prebuilt binaries and is
 only used by PDF.js rendering paths, not by the app's text extraction path.
 
 ```bash
-npm install
+pnpm install
 cp .env.example .env   # then edit
 ```
 
@@ -36,10 +38,10 @@ Environment variables (all optional):
 ## Run
 
 ```bash
-npm run dev        # launch the app (electron-vite)
-npm run build      # production build to out/
-npm run typecheck  # strict tsc, no emit
-npm test           # vitest (validator, workspace, tools, QuickJS, loop)
+pnpm run dev        # launch the app (electron-vite)
+pnpm run build      # production build to out/
+pnpm run typecheck  # strict tsc, no emit
+pnpm test           # vitest (validator, workspace, tools, QuickJS, loop)
 ```
 
 ## Debugging
@@ -48,7 +50,7 @@ Set `AGENT_DEBUG_LOG` to a directory path before launching the app to write an
 opt-in JSONL debug log for each task run:
 
 ```bash
-AGENT_DEBUG_LOG=/tmp/agent-debug npm run dev
+AGENT_DEBUG_LOG=/tmp/agent-debug pnpm run dev
 ```
 
 This deliberately breaches the normal no-disk-residue guarantee. It logs agent
@@ -60,7 +62,7 @@ rest of the session.
 ### Package a portable Windows .exe
 
 ```bash
-npm run build:win  # -> release/Sandboxed Agent PoC-<version>-portable.exe
+pnpm run build:win  # -> release/Sandboxed Agent PoC-<version>-portable.exe
 ```
 
 Run this **on Windows** (PowerShell or cmd), not under WSL — electron-builder
@@ -73,17 +75,18 @@ If you develop in **WSL**, don't run `build:win` against your Linux checkout —
 its `node_modules` may hold Linux-native optional dependencies. Instead use:
 
 ```bash
-npm run build:win:wsl           # sync -> Windows install -> build
-npm run build:win:wsl -- --run  # ...then launch the exe
+pnpm run build:win:wsl           # sync -> Windows install -> build
+pnpm run build:win:wsl -- --run  # ...then launch the exe
 ```
 
 This drives the Windows Node toolchain over WSL interop in an isolated
 Windows-side working copy (its own `node_modules`), so your Linux `node_modules`
-is never touched. The exe is copied back into `release/`. Requires Node on
-Windows and WSL interop (`cmd.exe` on PATH). See `scripts/build-win.sh`.
+is never touched. The exe is copied back into `release/`. Requires Node (with
+corepack) on Windows and WSL interop (`cmd.exe` on PATH). See
+`scripts/build-win.sh`.
 
 On launch the app prompts for your Anthropic API key (unless `ANTHROPIC_API_KEY`
-is set in the environment `npm run dev` inherits, in which case it is used as a
+is set in the environment `pnpm run dev` inherits, in which case it is used as a
 seed). The key stays in main-process memory and is discarded when the app exits.
 
 ## Architecture
@@ -229,7 +232,7 @@ audit panel's disk section turns red and says so.
 
 ## Tests
 
-`npm test` covers the security-critical surface: the path validator (every case
+`pnpm test` covers the security-critical surface: the path validator (every case
 in the spec), the VirtualWorkspace (status transitions, caps, binary detection),
 the file/document tools, the Task subagent and todo tools, the QuickJS
 capability sandbox (no ambient globals, validator
@@ -240,4 +243,4 @@ mocked client — no network required.
 
 > Live end-to-end runs (staging a real CSV, streaming a summary, exporting)
 > require a valid `ANTHROPIC_API_KEY` and are driven interactively via
-> `npm run dev`.
+> `pnpm run dev`.

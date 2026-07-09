@@ -1,0 +1,14 @@
+# Single-package repo; this file exists for pnpm settings only.
+
+# electron-builder walks a flat node_modules when packaging; pnpm's default
+# symlinked layout breaks that, so hoist like npm/yarn classic.
+nodeLinker: hoisted
+
+# Dependency postinstall scripts are blocked by default in pnpm >= 10;
+# esbuild genuinely needs its (it fetches the platform binary). electron >= 43
+# has no postinstall at all — its binary is fetched by the `install-electron`
+# bin, which our root postinstall script runs. electron-winstaller's script
+# only builds Squirrel assets we don't use (the Windows target is `portable`).
+allowBuilds:
+  esbuild: true
+  electron-winstaller: false

@@ -5,13 +5,15 @@
 #
 # WSL cannot produce a Windows binary itself, but it can drive the Windows Node
 # toolchain over WSL interop. So we sync the working tree into an isolated
-# Windows-side directory (its OWN node_modules) and run `npm install` +
-# `npm run build:win` there via cmd.exe. Your Linux node_modules stays intact.
+# Windows-side directory (its OWN node_modules) and run `pnpm install` +
+# `pnpm run build:win` there via cmd.exe. Your Linux node_modules stays intact.
+# pnpm is invoked through corepack (ships with Node), pinned by the
+# `packageManager` field in package.json — no Windows-side pnpm install needed.
 #
 # Usage:
-#   npm run build:win:wsl            # sync -> Windows install -> build
-#   npm run build:win:wsl -- --run   # ...then launch the exe on Windows
-#   npm run build:win:wsl -- --clean # wipe the isolated node_modules first
+#   pnpm run build:win:wsl            # sync -> Windows install -> build
+#   pnpm run build:win:wsl -- --run   # ...then launch the exe on Windows
+#   pnpm run build:win:wsl -- --clean # wipe the isolated node_modules first
 set -euo pipefail
 
 RUN_AFTER=0
@@ -30,6 +32,8 @@ grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
 command -v cmd.exe >/dev/null \
   || { echo "cmd.exe not on PATH — WSL interop is disabled." >&2; exit 1; }
 command -v rsync >/dev/null || { echo "rsync is required." >&2; exit 1; }
+cmd.exe /c "corepack --version" >/dev/null 2>&1 \
+  || { echo "corepack not found on the Windows Node install (needed to run pnpm)." >&2; exit 1; }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -64,8 +68,10 @@ rsync -a --delete \
 # /mnt/c, so cmd.exe then inherits a proper C:\ CWD and no `cd /d` is needed.
 # The subshell keeps this CWD change from leaking into artifact collection.
 ISO_WIN="$(wslpath -w "$ISO_WSL")"
-echo "Running Windows npm install + build:win in $ISO_WIN"
-( cd "$ISO_WSL" && cmd.exe /c "npm install --no-fund --no-audit && npm run build:win" ) \
+echo "Running Windows pnpm install + build:win in $ISO_WIN"
+# COREPACK_ENABLE_DOWNLOAD_PROMPT=0 skips corepack's interactive "download
+# pnpm@x.y.z?" prompt on first use.
+( cd "$ISO_WSL" && cmd.exe /c "set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& corepack pnpm install && corepack pnpm run build:win" ) \
   || { echo "Windows build failed." >&2; exit 1; }
 
 # --- collect the artifact -------------------------------------------------

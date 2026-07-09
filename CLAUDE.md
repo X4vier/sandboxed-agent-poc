@@ -9,17 +9,19 @@ An Electron PoC ("Sandboxed Agent PoC") of a Claude-powered agent that operates 
 ## Commands
 
 ```bash
-npm run dev          # launch the app (electron-vite); reads .env, prompts for API key otherwise
-npm test             # vitest, no network needed (agent loop tests use a mocked client)
-npx vitest run tests/loop.test.ts        # single test file
-npm run typecheck    # strict tsc --noEmit
-npm run build:win    # portable Windows .exe (run on Windows)
-npm run build:win:wsl   # from WSL: syncs to a Windows-side working copy and builds there
+pnpm run dev          # launch the app (electron-vite); reads .env, prompts for API key otherwise
+pnpm test             # vitest, no network needed (agent loop tests use a mocked client)
+pnpm vitest run tests/loop.test.ts       # single test file
+pnpm run typecheck    # strict tsc --noEmit
+pnpm run build:win    # portable Windows .exe (run on Windows)
+pnpm run build:win:wsl   # from WSL: syncs to a Windows-side working copy and builds there
 ```
+
+This repo uses **pnpm** (pinned via `packageManager` in package.json; run through `corepack pnpm` if pnpm isn't installed). Do not use npm — there is no package-lock.json. pnpm settings (hoisted node_modules for electron-builder, dependency build-script allowlist) live in `pnpm-workspace.yaml`; the root `postinstall` runs `install-electron` because electron ≥ 43 has no postinstall of its own.
 
 WSL note: never run `build:win` against the Linux checkout — its `node_modules` is Linux-native. Use the `:wsl` variants (`scripts/build-win.sh`, `scripts/dev-win.sh`).
 
-Live end-to-end behavior can only be exercised interactively via `npm run dev` with a real `ANTHROPIC_API_KEY`.
+Live end-to-end behavior can only be exercised interactively via `pnpm run dev` with a real `ANTHROPIC_API_KEY`.
 
 ## Architecture
 

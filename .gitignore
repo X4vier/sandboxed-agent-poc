@@ -9,3 +9,4 @@ agent-run-*.jsonl
 agent-debug/
 .DS_Store
 plan.md
+.pnpm-store/

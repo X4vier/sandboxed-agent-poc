@@ -2,21 +2,22 @@
 #
 # Run the dev loop against the *Windows* Electron binary *from WSL*.
 #
-# `npm run dev` in WSL launches the Linux Electron (rendered via WSLg). To
+# `pnpm run dev` in WSL launches the Linux Electron (rendered via WSLg). To
 # exercise the real win32 binary with live reload, the whole electron-vite dev
 # toolchain has to run on the Windows side — cmd.exe can't cd into this ext4
 # checkout's \\wsl.localhost path, so (exactly like build-win.sh) we sync the
 # tree into an isolated dir under the Windows profile, which has its own win32
-# node_modules, and run `npm run dev` there via interop.
+# node_modules, and run `pnpm run dev` there via interop. pnpm runs through
+# corepack (ships with Node), pinned by package.json's `packageManager`.
 #
 # The isolated dir is shared with build:win:wsl, so its node_modules install
 # serves both flows.
 #
 # Usage:
-#   npm run dev:win:wsl              # sync once -> Windows `npm run dev`
-#   npm run dev:win:wsl -- --watch   # ...and keep re-syncing on file changes
-#                                    #    so edits in your WSL checkout reload
-#   npm run dev:win:wsl -- --clean   # wipe the isolated node_modules first
+#   pnpm run dev:win:wsl              # sync once -> Windows `pnpm run dev`
+#   pnpm run dev:win:wsl -- --watch   # ...and keep re-syncing on file changes
+#                                     #    so edits in your WSL checkout reload
+#   pnpm run dev:win:wsl -- --clean   # wipe the isolated node_modules first
 set -euo pipefail
 
 WATCH=0
@@ -35,6 +36,8 @@ grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
 command -v cmd.exe >/dev/null \
   || { echo "cmd.exe not on PATH — WSL interop is disabled." >&2; exit 1; }
 command -v rsync >/dev/null || { echo "rsync is required." >&2; exit 1; }
+cmd.exe /c "corepack --version" >/dev/null 2>&1 \
+  || { echo "corepack not found on the Windows Node install (needed to run pnpm)." >&2; exit 1; }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -64,28 +67,29 @@ sync_once
 
 # --- ensure win32 dependencies -------------------------------------------
 # Install when node_modules is missing (build:win:wsl / a prior run may have
-# populated it already) AND whenever package-lock.json has changed since the
+# populated it already) AND whenever pnpm-lock.yaml has changed since the
 # last install — e.g. a dependency was added. node_modules is rsync-excluded,
 # so a freshly synced lockfile would otherwise go unnoticed and the new dep
 # would be missing at runtime (externalized main-process deps are require()d
 # from node_modules, not bundled). The stamp lives inside node_modules so it
-# survives the source sync.
-LOCK="$ISO_WSL/package-lock.json"
+# survives the source sync. COREPACK_ENABLE_DOWNLOAD_PROMPT=0 skips corepack's
+# interactive "download pnpm@x.y.z?" prompt on first use.
+LOCK="$ISO_WSL/pnpm-lock.yaml"
 STAMP="$ISO_WSL/node_modules/.dev-win-install-stamp"
 if [ ! -d "$ISO_WSL/node_modules" ] || [ ! -f "$STAMP" ] || ! cmp -s "$LOCK" "$STAMP"; then
   echo "Installing win32 node_modules (missing or dependencies changed)…"
-  ( cd "$ISO_WSL" && cmd.exe /c "npm install --no-fund --no-audit" ) \
-    || { echo "Windows npm install failed." >&2; exit 1; }
+  ( cd "$ISO_WSL" && cmd.exe /c "set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& corepack pnpm install" ) \
+    || { echo "Windows pnpm install failed." >&2; exit 1; }
   cp "$LOCK" "$STAMP"
 fi
 
-# `npm run dev` launches Electron, so the electron *binary* must be present —
+# `pnpm run dev` launches Electron, so the electron *binary* must be present —
 # not just the package. build:win only needs electron-builder (which fetches
 # its own copy), so a build-populated node_modules can lack dist/electron.exe,
-# which makes electron-vite throw "Electron uninstall". Fetch it by running
-# electron's downloader directly: `npm rebuild` is a no-op when the npm config
-# blocks install scripts (ignore-scripts / allow-scripts), but invoking
-# install.js with node bypasses that gate.
+# which makes electron-vite throw "Electron uninstall". electron >= 43 has no
+# postinstall of its own; our root postinstall runs `install-electron`, but a
+# node_modules populated some other way can still lack the binary — invoking
+# install.js with node fetches it regardless of install-script settings.
 if [ ! -f "$ISO_WSL/node_modules/electron/dist/electron.exe" ]; then
   echo "Electron binary missing — downloading it (electron/install.js)…"
   ( cd "$ISO_WSL" && cmd.exe /c "node node_modules\\electron\\install.js" ) \
@@ -106,4 +110,4 @@ fi
 # CWD and needs no `cd /d`. Ctrl-C stops the watcher (trap); close the Electron
 # window to end the dev server.
 echo "Starting Windows dev (electron-vite) in $(wslpath -w "$ISO_WSL")"
-( cd "$ISO_WSL" && cmd.exe /c "npm run dev" )
+( cd "$ISO_WSL" && cmd.exe /c "set COREPACK_ENABLE_DOWNLOAD_PROMPT=0&& corepack pnpm run dev" )

@@ -7,6 +7,7 @@
   "author": "Affinda",
   "license": "UNLICENSED",
   "private": true,
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -14,6 +15,7 @@
     "build:win:wsl": "bash scripts/build-win.sh",
     "dev:win:wsl": "bash scripts/dev-win.sh",
     "start": "electron-vite preview",
+    "postinstall": "install-electron",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
