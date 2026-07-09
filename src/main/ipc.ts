@@ -191,15 +191,24 @@ export function registerIpc(window: BrowserWindow): void {
     // Resolve only once the conversation has come fully to rest, so the renderer's
     // await marks the run finished at the right moment (steering keeps it pending).
     await state.agent.waitUntilIdle();
-    logLine('run_end', JSON.stringify({ status: 'completed' }));
+    const status = state.agent.lastRunStatus();
+    if (status === 'completed') {
+      logLine('run_end', JSON.stringify({ status: 'completed' }));
+    } else {
+      // Preserve the pre-AgentSession distinction: run_error closes the debug log
+      // the same way a thrown failure did before waitUntilIdle swallowed it.
+      logLine('run_error', JSON.stringify({ status, message: status === 'cancelled' ? 'Run cancelled.' : 'Run failed.' }));
+    }
   });
 
   ipcMain.handle('agent:steer', (_e, message: unknown): void => {
     const trimmed = requireString(message, 'message').trim();
     if (trimmed.length === 0) throw new Error('Message must not be empty.');
+    if (!hasApiKey()) throw new Error('No Anthropic API key set. Enter your key to run a task.');
     if (!state.agent) throw new Error('No active conversation to steer.');
     // Injected into the in-flight run at its next turn boundary. Returns at once;
     // the originating startTask await stays pending until the run settles.
+    // If the session is idle, steer() starts a run (same as prompt) — so gate the key.
     state.agent.steer(trimmed);
   });
 

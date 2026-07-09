@@ -105,8 +105,72 @@ describe('Agent', () => {
     await agent.waitUntilIdle();
 
     expect(agent.isRunning()).toBe(false);
+    expect(agent.lastRunStatus()).toBe('cancelled');
     // Only the first run's single request went out; the cleared follow-up never ran.
     expect(engine.requests).toHaveLength(1);
     expect(events.some((e) => e.type === 'error')).toBe(true);
+  });
+
+  it('clears leftover steering after a failed run so it cannot leak into the next prompt', async () => {
+    const { agent, engine } = makeAgent();
+    engine.push({ rejectWith: new Error('boom'), stopReason: 'end_turn' });
+    engine.push({ text: 'fresh answer', stopReason: 'end_turn' });
+
+    agent.prompt('first');
+    agent.steer('steering that never got a turn boundary');
+    await agent.waitUntilIdle();
+    expect(agent.lastRunStatus()).toBe('error');
+
+    // A new prompt must start clean — the orphaned steer must not appear.
+    agent.prompt('second');
+    await agent.waitUntilIdle();
+
+    expect(engine.requests).toHaveLength(2);
+    expect(lastUserText(engine.requests[1]!)).toBe('second');
+    expect(engine.requests[1]!.messages.some((m) => {
+      const text = typeof m.content === 'string' ? m.content : '';
+      return text.includes('steering that never');
+    })).toBe(false);
+  });
+
+  it('clears queued follow-ups after a failed run', async () => {
+    const { agent, engine } = makeAgent();
+    engine.push({ rejectWith: new Error('boom'), stopReason: 'end_turn' });
+    engine.push({ text: 'should be the only recovery turn', stopReason: 'end_turn' });
+
+    agent.prompt('first');
+    agent.prompt('follow-up that must die with the failure');
+    await agent.waitUntilIdle();
+    expect(agent.lastRunStatus()).toBe('error');
+    expect(engine.requests).toHaveLength(1);
+
+    agent.prompt('recovery');
+    await agent.waitUntilIdle();
+    expect(engine.requests).toHaveLength(2);
+    expect(lastUserText(engine.requests[1]!)).toBe('recovery');
+  });
+
+  it('forwards beforeToolCall from AgentOptions into the loop', async () => {
+    const engine = createFakeEngine();
+    engine.push({
+      toolUses: [{ id: 't1', name: 'Write', input: { file_path: 'x.txt', content: 'no' } }],
+      stopReason: 'tool_use',
+    });
+    engine.push({ text: 'blocked', stopReason: 'end_turn' });
+
+    const vfs = new VirtualWorkspace();
+    const agent = new Agent({
+      vfs,
+      engine,
+      tools: buildTools(),
+      budget: new TokenBudget(),
+      emit: () => {},
+      beforeToolCall: () => ({ block: true, reason: 'policy' }),
+    });
+    agent.prompt('write');
+    await agent.waitUntilIdle();
+
+    expect(vfs.fileCount).toBe(0);
+    expect(agent.lastRunStatus()).toBe('completed');
   });
 });

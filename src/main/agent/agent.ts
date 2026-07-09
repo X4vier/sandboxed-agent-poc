@@ -3,8 +3,16 @@ import type { AgentEvent } from './events';
 import type { VirtualWorkspace } from '../workspace/VirtualWorkspace';
 import type { CompletionEngine } from './engine';
 import type { CompactionSettings } from './compaction';
-import { runAgent } from './loop';
+import {
+  runAgent,
+  type AfterToolCallResult,
+  type BeforeToolCallResult,
+  type ToolCallContext,
+} from './loop';
 import type { AgentTool, TokenBudget } from './types';
+
+/** How the most recent run settled, for callers (IPC debug log) that need status. */
+export type AgentRunStatus = 'completed' | 'error' | 'cancelled';
 
 /** How a {@link PendingMessageQueue} releases its contents on {@link PendingMessageQueue.drain}. */
 export type QueueMode = 'all' | 'one-at-a-time';
@@ -64,6 +72,14 @@ export interface AgentOptions {
   compaction?: CompactionSettings;
   /** Sink for streamed agent events, forwarded to the renderer over IPC. */
   emit: (event: AgentEvent) => void;
+  /** Permission hook; forwarded to every run (and inherited by subagents). */
+  beforeToolCall?: (
+    ctx: ToolCallContext,
+  ) => BeforeToolCallResult | undefined | Promise<BeforeToolCallResult | undefined>;
+  /** Result-rewrite hook; forwarded to every run (and inherited by subagents). */
+  afterToolCall?: (
+    ctx: ToolCallContext & { result: string; isError: boolean },
+  ) => AfterToolCallResult | undefined | Promise<AfterToolCallResult | undefined>;
 }
 
 function messageText(content: MessageParam['content']): string {
@@ -101,12 +117,18 @@ export class Agent {
   private readonly steeringQueue = new PendingMessageQueue('one-at-a-time');
   private readonly followUpQueue = new PendingMessageQueue('all');
   private activeRun: { abort: AbortController; done: Promise<void> } | undefined = undefined;
+  private lastStatus: AgentRunStatus = 'completed';
 
   constructor(private readonly opts: AgentOptions) {}
 
   /** True while a run is in flight. */
   isRunning(): boolean {
     return this.activeRun !== undefined;
+  }
+
+  /** How the most recently settled run finished (`completed` / `error` / `cancelled`). */
+  lastRunStatus(): AgentRunStatus {
+    return this.lastStatus;
   }
 
   /**
@@ -166,8 +188,14 @@ export class Agent {
       try {
         await this.runOnce(task, abort.signal);
         clean = true;
+        this.lastStatus = 'completed';
       } catch {
         // Swallowed: runAgent emitted the terminal event already.
+        this.lastStatus = abort.signal.aborted ? 'cancelled' : 'error';
+        // Queued messages belonged to this run sequence. Drop them so a failed
+        // run cannot inject leftover steer/follow-up text into a later prompt().
+        this.steeringQueue.clear();
+        this.followUpQueue.clear();
       } finally {
         this.activeRun = undefined;
       }
@@ -193,6 +221,8 @@ export class Agent {
       parentAgentId: null,
       budget: this.opts.budget,
       ...(this.opts.compaction ? { compaction: this.opts.compaction } : {}),
+      ...(this.opts.beforeToolCall ? { beforeToolCall: this.opts.beforeToolCall } : {}),
+      ...(this.opts.afterToolCall ? { afterToolCall: this.opts.afterToolCall } : {}),
       ...(this.messages.length > 0
         ? { priorMessages: this.messages, priorContextTokens: this.contextTokens }
         : {}),

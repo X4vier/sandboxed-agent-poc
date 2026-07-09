@@ -7,6 +7,8 @@ import { underPath } from './pathUtils';
 import { GREP_MAX_LINE_LENGTH, truncateLine } from './truncate';
 
 const GREP_MATCH_CAP = 100;
+/** Hard ceiling on `context` so a pathological model input can't explode output. */
+const GREP_MAX_CONTEXT = 20;
 
 const GREP_OUTPUT_MODES = ['content', 'files_with_matches', 'count'] as const;
 type GrepOutputMode = (typeof GREP_OUTPUT_MODES)[number];
@@ -43,19 +45,19 @@ function contextRanges(matchIndices: number[], context: number, lineCount: numbe
 export const grepTool: AgentTool = {
   name: 'Grep',
   description:
-    'Search file contents, including extracted text inside PDFs and DOCX files, with a regular expression. Input: { "pattern": "<regex>", "path"?: ' +
+    'Search file contents, including extracted text inside PDFs and DOCX files. Input: { "pattern": "<regex or literal>", "path"?: ' +
     '"<dir scope>", "glob"?: "<filename filter e.g. *.ts>", "-i"?: false, "output_mode"?: ' +
-    '"content" }. pattern is ALWAYS a JavaScript regular expression (escape literal metacharacters). ' +
+    '"content" }. By default pattern is a JavaScript regular expression; set "literal": true to match ' +
+    'it as plain text (metacharacters escaped for you). ' +
     'output_mode: "content" (default) returns "path:line: text" for plain text, "path (page N): text" ' +
     'for PDFs, and "path: text" for DOCX; "files_with_matches" returns matching paths only; "count" ' +
-    `returns "path:count". Set "-i" for case-insensitive; "literal" to match the pattern as plain ` +
-    'text (metacharacters escaped for you); "context" to include N lines before and after each match ' +
-    `(content mode). Each match line is truncated to ${GREP_MAX_LINE_LENGTH} characters and up to ` +
-    `${GREP_MATCH_CAP} results are returned, then a truncation note.`,
+    `returns "path:count". Set "-i" for case-insensitive; "context" (0–${GREP_MAX_CONTEXT}) to include N ` +
+    'lines before and after each match (content mode). Each match line is truncated to ' +
+    `${GREP_MAX_LINE_LENGTH} characters and up to ${GREP_MATCH_CAP} results are returned, then a truncation note.`,
   inputSchema: {
     type: 'object',
     properties: {
-      pattern: { type: 'string', description: 'Regular expression to search for.' },
+      pattern: { type: 'string', description: 'Regular expression (or literal text when literal=true).' },
       path: { type: 'string', description: 'Optional directory prefix to search under.' },
       glob: { type: 'string', description: 'Optional filename filter, e.g. "*.ts".' },
       '-i': { type: 'boolean', description: 'Case-insensitive search.' },
@@ -65,7 +67,7 @@ export const grepTool: AgentTool = {
       },
       context: {
         type: 'number',
-        description: 'Lines of context to show before and after each match, content mode (default 0).',
+        description: `Lines of context before/after each match, content mode (default 0, max ${GREP_MAX_CONTEXT}).`,
       },
       output_mode: {
         type: 'string',
@@ -82,7 +84,7 @@ export const grepTool: AgentTool = {
     const globFilter = getOptionalString(input, 'glob');
     const caseInsensitive = getOptionalBoolean(input, '-i');
     const literal = getOptionalBoolean(input, 'literal');
-    const context = Math.max(0, getOptionalInteger(input, 'context') ?? 0);
+    const context = Math.min(GREP_MAX_CONTEXT, Math.max(0, getOptionalInteger(input, 'context') ?? 0));
     const outputMode = (getOptionalString(input, 'output_mode') ?? 'content') as GrepOutputMode;
     const prefix = rawPath ? ctx.normalizePath(rawPath) : undefined;
 

@@ -215,6 +215,18 @@ describe('Grep', () => {
     expect(r).toContain('--');
   });
 
+  it('caps context at 20 so a huge value cannot explode the result', async () => {
+    const ctx = makeCtx();
+    // 50 lines with a match in the middle; context=999 must clamp to 20.
+    const lines = Array.from({ length: 50 }, (_, i) => (i === 25 ? 'NEEDLE' : `line${i}`));
+    await writeTool.handler({ file_path: 'a.txt', content: lines.join('\n') }, ctx);
+    const r = await grepTool.handler({ pattern: 'NEEDLE', context: 999 }, ctx);
+    expect(r).toContain('a.txt:6: line5'); // 25-20+1 = 6 (1-indexed)
+    expect(r).toContain('a.txt:46: line45'); // 25+20+1 = 46
+    expect(r).not.toContain('a.txt:5: line4');
+    expect(r).not.toContain('a.txt:47: line46');
+  });
+
   it('skips documents whose extracted text exceeds the Grep index cap', async () => {
     const ctx = makeCtx();
     const huge = `needle ${'x'.repeat(MAX_INDEX_TEXT_BYTES + 1)}`;
